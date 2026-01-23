@@ -278,11 +278,13 @@ class TradeAnalyzer:
         merged = merged.sort_values(["symbol", "hour_of_day"])
         return merged
 
-    def calculate_inventory_stats(self) -> Dict[str, pd.DataFrame]:
+    def calculate_inventory_stats(self, df: Optional[pd.DataFrame] = None) -> Dict[str, pd.DataFrame]:
         """Inventory build/deficit by hour, day, week"""
-        if self.df.empty:
+        if df is None:
+            df = self.df
+        if df.empty:
             return {"hourly": pd.DataFrame(), "daily": pd.DataFrame(), "weekly": pd.DataFrame()}
-        df = self.df.copy()
+        df = df.copy()
         df["hour"] = df["timestamp"].dt.floor("h")
         df["date"] = df["timestamp"].dt.date
         df["week"] = df["timestamp"].dt.to_period("W").apply(lambda p: p.start_time.date())
@@ -309,6 +311,16 @@ class TradeAnalyzer:
         weekly["week"] = weekly["week"].astype(str)
 
         return {"hourly": hourly, "daily": daily, "weekly": weekly}
+
+    def calculate_inventory_by_symbol(self) -> Dict[str, Dict[str, pd.DataFrame]]:
+        """Inventory build/deficit by symbol"""
+        result: Dict[str, Dict[str, pd.DataFrame]] = {}
+        if self.df.empty:
+            return result
+        for symbol in self.df["symbol"].dropna().unique().tolist():
+            symbol_df = self.df[self.df["symbol"] == symbol]
+            result[symbol] = self.calculate_inventory_stats(symbol_df)
+        return result
 
     def calculate_time_correlations(self) -> Dict[str, Any]:
         """Correlation between trading time and PnL"""
@@ -425,6 +437,7 @@ class TradeAnalyzer:
     def get_comprehensive_analysis(self) -> Dict[str, Any]:
         """Get all analysis results in one dictionary"""
         inventory = self.calculate_inventory_stats()
+        inventory_by_symbol = self.calculate_inventory_by_symbol()
         return {
             "basic": self.get_basic_statistics(),
             "performance": self.calculate_performance_metrics(),
@@ -439,5 +452,13 @@ class TradeAnalyzer:
             "inventory_hourly": inventory["hourly"].to_dict("records") if not inventory["hourly"].empty else [],
             "inventory_daily": inventory["daily"].to_dict("records") if not inventory["daily"].empty else [],
             "inventory_weekly": inventory["weekly"].to_dict("records") if not inventory["weekly"].empty else [],
+            "inventory_by_symbol": {
+                symbol: {
+                    "hourly": stats["hourly"].to_dict("records") if not stats["hourly"].empty else [],
+                    "daily": stats["daily"].to_dict("records") if not stats["daily"].empty else [],
+                    "weekly": stats["weekly"].to_dict("records") if not stats["weekly"].empty else []
+                }
+                for symbol, stats in inventory_by_symbol.items()
+            },
             "time_correlations": self.calculate_time_correlations(),
         }

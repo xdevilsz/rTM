@@ -118,6 +118,65 @@
     .dot.warn { background: var(--warning); }
     .dot.error { background: #ff6b6b; }
     .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+    .headerRow {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .headerLeft {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .headerRight {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      background: rgba(20, 28, 39, 0.7);
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .meta-pill .meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .meta-pill .label {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+    }
+    .exchange-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .exchange-logo {
+      max-height: 48px;
+      max-width: 200px;
+      height: auto;
+      width: auto;
+      object-fit: contain;
+      border-radius: 8px;
+      display: none;
+    }
+    .exchange-logo.has-logo {
+      display: inline-block;
+    }
     input, select, button {
       background: rgba(20, 28, 39, 0.8);
       color: var(--text);
@@ -223,6 +282,19 @@
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       margin-top: 12px;
     }
+    .analysis-charts-grid.single {
+      grid-template-columns: minmax(320px, 520px);
+    }
+    .analysis-charts-grid.focus .analysis-chart-block {
+      display: none;
+    }
+    .analysis-charts-grid.focus .analysis-chart-block.expanded {
+      display: block;
+      grid-column: 1 / -1;
+    }
+    .analysis-chart-block.expanded .analysis-chart svg {
+      height: 320px;
+    }
     .analysis-chart-block h3 {
       margin: 0 0 6px;
       font-size: 14px;
@@ -294,33 +366,32 @@
       white-space: nowrap;
       transition: opacity 120ms ease;
     }
-    .chart-modal {
-      position: fixed;
-      inset: 0;
-      background: rgba(6, 10, 16, 0.8);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 999;
-    }
-    .chart-modal.active { display: flex; }
-    .chart-modal-content {
-      width: min(92vw, 960px);
-      background: rgba(12, 18, 26, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-    }
-    .chart-modal-content .analysis-chart svg {
-      height: 320px;
-    }
     .analysis-chart .chart-title {
       font-size: 11px;
       color: var(--muted);
       margin-bottom: 6px;
       letter-spacing: 0.03em;
       text-transform: uppercase;
+    }
+    .analysis-chart .chart-legend {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      display: flex;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      background: rgba(10, 14, 20, 0.5);
+      border-radius: 999px;
+      padding: 2px 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .analysis-chart .legend-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
     }
     details.analysis-details {
       margin-top: 8px;
@@ -580,45 +651,118 @@
       accent-color: var(--accent);
       min-width: 140px;
     }
+    .site-footer {
+      margin-top: 28px;
+      padding: 14px 0;
+      border-top: 1px solid rgba(61, 77, 102, 0.35);
+      background: rgba(20, 28, 39, 0.85);
+    }
+    .footer-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto minmax(260px, 1fr);
+      gap: 18px;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 18px;
+      font-size: 12px;
+      align-items: center;
+    }
+    .footer-title {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .footer-text {
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .footer-center {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .footer-links {
+      display: grid;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .footer-grid > div:first-child {
+      text-align: left;
+    }
+    .footer-grid > div:last-child {
+      text-align: right;
+    }
+    .social-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      background: rgba(20, 28, 39, 0.7);
+      box-shadow: var(--shadow);
+    }
+    .pill-link {
+      color: var(--text);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+    .pill-link:hover {
+      border-color: rgba(124, 196, 255, 0.5);
+    }
+    .pill-link img {
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+      display: block;
+    }
+    .footer-link-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+    }
+    .footer-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
-    <div>
-      <h1 id="title_text">Resilient Trade Manager</h1>
-      <div class="muted" id="subtitle">Trade Monitoring and Analytics</div>
+  <div class="headerRow">
+    <div class="headerLeft">
+      <div>
+        <h1 id="title_text">Resilient Trade Manager</h1>
+        <div class="muted" id="subtitle">Trade Monitoring and Analytics</div>
+      </div>
+      <img id="exchange_logo" class="exchange-logo" alt="exchange">
     </div>
-    <div class="pill">
-      <select id="lang_select">
-        <option value="en">EN</option>
-        <option value="zh">中文</option>
-      </select>
-      <button id="open_trading_modal" class="tab" data-i18n="button_enable_trading">Enable Trading</button>
-      <span id="status_dot" class="dot"></span>
-      <span id="status_text">Waiting for product...</span>
-    </div>
-  </div>
-
-  <div class="row" style="margin-top:12px;">
-    <div class="card">
-      <div class="label" data-i18n="label_product">Product</div>
-      <div class="value" id="product_name">-</div>
-    </div>
-    <div class="card">
-      <div class="label" data-i18n="label_source">Source</div>
-      <div class="value" id="source_mode">-</div>
-    </div>
-    <div class="card">
-      <div class="label" data-i18n="label_exchange">Exchange</div>
-      <div class="value" id="exchange_name">-</div>
-    </div>
-    <div class="card">
-      <div class="label" data-i18n="label_last_traded">Last Traded</div>
-      <div class="value" id="symbol_name">-</div>
-    </div>
-    <div class="card">
-      <div class="label" data-i18n="label_session">Session</div>
-      <div class="value" id="session_id">-</div>
+    <div class="headerRight">
+      <div class="meta-pill">
+        <span class="label" data-i18n="label_product">Product</span>
+        <span class="meta-item" id="product_name">-</span>
+        <span class="label" data-i18n="label_exchange">Exchange</span>
+        <span class="meta-item exchange-row">
+          <span id="exchange_name">-</span>
+        </span>
+      </div>
+      <div class="pill">
+        <select id="lang_select">
+          <option value="en">EN</option>
+          <option value="zh">中文</option>
+        </select>
+        <button id="open_trading_modal" class="tab" data-i18n="button_enable_trading">Enable Trading</button>
+        <span id="status_dot" class="dot"></span>
+        <span id="status_text">Waiting for product...</span>
+      </div>
     </div>
   </div>
 
@@ -808,15 +952,6 @@
     </div>
   </div>
 
-  <div id="chart_modal" class="chart-modal">
-    <div class="chart-modal-content">
-      <div class="row" style="justify-content:space-between;align-items:center;">
-        <div class="label" id="chart_modal_title">Chart</div>
-        <button id="chart_modal_close" data-i18n="button_close">Close</button>
-      </div>
-      <div id="chart_modal_body"></div>
-    </div>
-  </div>
 
   <div id="panel-chart" class="panel">
     <h2 data-i18n="heading_chart">Chart</h2>
@@ -975,47 +1110,54 @@
 
   <div id="panel-about" class="panel">
     <h2 data-i18n="heading_about">About</h2>
-    <div class="card" style="max-width:720px;">
-      <div class="value" data-i18n="about_credit">This Trade Manager is powered by Resilient Lab 505.</div>
-      <div style="margin-top:10px;" class="muted" data-i18n="about_contact">
-        Business contact: contact@resilientlab505.com
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-title" data-i18n="about_credit">This Trade Manager is powered by Resilient Lab 505.</div>
+        <div class="footer-text" data-i18n="about_contact">Business contact: contact@resilientlab505.com</div>
+        <div class="footer-text" data-i18n="about_trademark_notice">Logos are trademarks of their respective owners.</div>
       </div>
-      <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <button id="open_donate" class="tab"><span data-i18n="button_donate">💜 Donate</span></button>
+      <div class="footer-center">
+        <div class="social-pill">
+          <a class="pill-link" href="javascript:void(0)" id="open_donate" title="Donate">
+            <img src="/assets/social/donate_dark.svg" alt="Donate">
+          </a>
+          <a class="pill-link" href="https://www.youtube.com/@resilientlab505" target="_blank" rel="noreferrer" title="YouTube">
+            <img src="/assets/social/youtube_logo_dark.svg" alt="YouTube">
+          </a>
+          <a class="pill-link" href="https://x.com/resilientlab505" target="_blank" rel="noreferrer" title="X">
+            <img src="/assets/social/x_logo_dark.svg" alt="X">
+          </a>
+          <a class="pill-link" href="https://t.me/resilientlab505" target="_blank" rel="noreferrer" title="Telegram">
+            <img src="/assets/social/tele_logo_dark.svg" alt="Telegram">
+          </a>
+          <a class="pill-link" href="https://www.resilientlab505.com" target="_blank" rel="noreferrer" title="Website">
+            <img src="/assets/social/globe_logo_dark.svg" alt="Website">
+          </a>
+        </div>
       </div>
-      <div class="engraved-row" style="margin-top:18px;">
-        <span class="engraved-label">
-          <svg class="engraved-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3" y="7" width="18" height="10" rx="3"></rect>
-            <polygon points="11,10 16,12 11,14" fill="none"></polygon>
-          </svg>
+      <div class="footer-links">
+        <div class="footer-link-row">
           <span data-i18n="about_youtube_label">YouTube</span>
-        </span>
-        <a class="engraved-link" href="https://www.youtube.com/@resilientlab505" target="_blank" rel="noreferrer">youtube.com/@resilientlab505</a>
-      </div>
-      <div class="engraved-row">
-        <span class="engraved-label">
-          <svg class="engraved-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 12l16-7-4 14-5-4-3 2 1-4z"></path>
-          </svg>
+          <a class="footer-link" href="https://www.youtube.com/@resilientlab505" target="_blank" rel="noreferrer">youtube.com/@resilientlab505</a>
+        </div>
+        <div class="footer-link-row">
+          <span>X</span>
+          <a class="footer-link" href="https://x.com/resilientlab505" target="_blank" rel="noreferrer">x.com/resilientlab505</a>
+        </div>
+        <div class="footer-link-row">
           <span data-i18n="about_telegram_label">Telegram</span>
-        </span>
-        <a class="engraved-link" href="https://t.me/resilientlab505" target="_blank" rel="noreferrer">@resilientlab505</a>
-      </div>
-      <div class="engraved-row">
-        <span class="engraved-label">
-          <svg class="engraved-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-            <line x1="3" y1="9" x2="21" y2="9"></line>
-            <circle cx="7" cy="7" r="0.8"></circle>
-            <circle cx="11" cy="7" r="0.8"></circle>
-          </svg>
+          <a class="footer-link" href="https://t.me/resilientlab505" target="_blank" rel="noreferrer">@resilientlab505</a>
+        </div>
+        <div class="footer-link-row">
           <span data-i18n="about_website_label">Website</span>
-        </span>
-        <a class="engraved-link" href="https://www.resilientlab505.com" target="_blank" rel="noreferrer">www.resilientlab505.com</a>
+          <a class="footer-link" href="https://www.resilientlab505.com" target="_blank" rel="noreferrer">www.resilientlab505.com</a>
+        </div>
       </div>
     </div>
-  </div>
+  </footer>
 
   <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 
@@ -1130,7 +1272,8 @@
       analysisData: null,
       analysisMode: 'full',
       analysisCompare: null,
-      advancedData: null
+      advancedData: null,
+      advancedDetailsKey: ''
     };
     let chart = null;
     let candleSeries = null;
@@ -1270,8 +1413,14 @@
         advanced_heading_inventory_hourly: 'Inventory Build (Hourly)',
         advanced_heading_inventory_daily: 'Inventory Build (Daily)',
         advanced_heading_inventory_weekly: 'Inventory Build (Weekly)',
-        advanced_heading_hourly_balance: 'Hourly PnL Curve (Proxy Balance)',
-        advanced_balance_note: 'Proxy balance uses cumulative net PnL from fills; wallet-level PnL requires account asset endpoints.',
+        advanced_heading_hourly_balance: 'Hourly PnL Curve',
+        advanced_series_primary: 'PnL',
+        advanced_series_secondary: 'Notional',
+        advanced_series_trades: 'Trades',
+        advanced_inventory_note: 'Inventory is aggregated across symbols. Select a symbol for a focused inventory view.',
+        advanced_details_title: 'Detailed Tables',
+        advanced_details_empty: 'Select a section to view detailed rows.',
+        advanced_details_button: 'Details',
         advanced_label_date: 'Date',
         advanced_label_hour: 'Hour',
         advanced_label_week: 'Week',
@@ -1311,8 +1460,21 @@
         heading_other_products: 'Other Products',
         other_products_hint: 'No additional products detected. Future modules will appear here automatically.',
         heading_about: 'About',
+        help_section_api: 'API Key Setup',
+        help_api_1: 'Use read-only keys for analysis/export. Trading requires keys with order permissions.',
+        help_api_2: 'Keys are stored in memory for the session. Use .env if you prefer.',
+        help_section_connection: 'Connection Method',
+        help_conn_1: 'REST is used for historical analysis and exports.',
+        help_conn_2: 'WebSocket is optional for realtime fills/positions.',
+        help_section_analysis: 'Analysis / Advanced Analysis',
+        help_analysis_1: 'Use Analysis for summaries and basic metrics.',
+        help_analysis_2: 'Advanced Analysis provides time-based breakdowns and inventory charts.',
+        help_section_chart: 'Chart & Trading',
+        help_chart_1: 'Chart supports overlays, orders, and trade markers.',
+        help_chart_2: 'Trading panel can submit orders if enabled.',
         about_credit: 'This Trade Manager is powered by Resilient Lab 505.',
         about_contact: 'Business contact: contact@resilientlab505.com',
+        about_trademark_notice: 'Logos are trademarks of their respective owners.',
         donate_title: 'Support This Dashboard',
         donate_note: 'Donations are optional and never required. Thank you for supporting Resilient Lab 505.',
         donate_evm_label: 'ETH / BSC / POL / ARB (EVM)',
@@ -1545,8 +1707,14 @@
         advanced_heading_inventory_hourly: '库存变化（小时）',
         advanced_heading_inventory_daily: '库存变化（每日）',
         advanced_heading_inventory_weekly: '库存变化（每周）',
-        advanced_heading_hourly_balance: '每小时盈亏曲线（余额代理）',
-        advanced_balance_note: '余额代理使用逐笔累计净盈亏；钱包级盈亏需接入账户资产端点。',
+        advanced_heading_hourly_balance: '每小时盈亏曲线',
+        advanced_series_primary: '盈亏',
+        advanced_series_secondary: '名义金额',
+        advanced_series_trades: '交易数',
+        advanced_inventory_note: '库存为全品种聚合，选择交易对后可查看该品种库存变化。',
+        advanced_details_title: '明细表',
+        advanced_details_empty: '请选择一个图表查看明细。',
+        advanced_details_button: '明细',
         advanced_label_date: '日期',
         advanced_label_hour: '小时',
         advanced_label_week: '周',
@@ -1586,8 +1754,21 @@
         heading_other_products: '其他产品',
         other_products_hint: '暂无其他产品。后续模块将自动展示。',
         heading_about: '关于',
+        help_section_api: 'API 密钥设置',
+        help_api_1: '分析/导出使用只读密钥；交易需要下单权限。',
+        help_api_2: '密钥仅保存在本次会话内存中，可使用 .env。',
+        help_section_connection: '连接方式',
+        help_conn_1: '历史分析与导出使用 REST。',
+        help_conn_2: 'WebSocket 用于实时成交/持仓（可选）。',
+        help_section_analysis: '分析 / 高级分析',
+        help_analysis_1: '分析页展示摘要与基础指标。',
+        help_analysis_2: '高级分析提供时间维度与库存图表。',
+        help_section_chart: '图表与交易',
+        help_chart_1: '图表支持叠加、订单与成交标记。',
+        help_chart_2: '启用交易后可在面板下单。',
         about_credit: '本交易管理器由 Resilient Lab 505 驱动。',
         about_contact: '商务联系：contact@resilientlab505.com',
+        about_trademark_notice: '所有标识均为其各自所有者的商标。',
         donate_title: '支持此看板',
         donate_note: '捐赠完全自愿且非必须。感谢支持 Resilient Lab 505。',
         donate_evm_label: 'ETH / BSC / POL / ARB（EVM）',
@@ -2104,6 +2285,15 @@
           sel.value = '';
         }
       });
+      const advancedSelect = document.getElementById('advanced_symbol');
+      if (advancedSelect && !advancedSelect.value) {
+        if (symbols.includes('BTCUSDT')) {
+          advancedSelect.value = 'BTCUSDT';
+        } else {
+          const btcSymbol = symbols.find(sym => sym.includes('BTC'));
+          if (btcSymbol) advancedSelect.value = btcSymbol;
+        }
+      }
       const chartSelect = document.getElementById('chart_symbol');
       if (chartSelect && !chartSelect.value) {
         if (symbols.includes('ETHUSDT')) {
@@ -2162,9 +2352,29 @@
           dot.classList.add('warn');
           statusText.textContent = t('status_waiting_data');
         }
-        setText('product_name', data.product || '-');
+        setText('product_name', 'ResTM(Beta)');
         setText('exchange_name', data.exchange || '-');
         setText('source_mode', formatModeLabel(data.mode || '-'));
+        const statusTextEl = document.getElementById('status_text');
+        if (statusTextEl) {
+          statusTextEl.title = data.session_id ? `Session: ${data.session_id}` : '';
+        }
+        const exchangeLogo = document.getElementById('exchange_logo');
+        if (exchangeLogo) {
+          const exchange = (data.exchange || '').toString().toLowerCase();
+          const logoMap = {
+            bybit: '/assets/exchanges/Bybit_dark.png'
+          };
+          const logoSrc = logoMap[exchange] || '';
+          if (logoSrc) {
+            exchangeLogo.src = logoSrc;
+            exchangeLogo.alt = exchange;
+            exchangeLogo.classList.add('has-logo');
+          } else {
+            exchangeLogo.removeAttribute('src');
+            exchangeLogo.classList.remove('has-logo');
+          }
+        }
         const subtitle = document.getElementById('subtitle');
         if (subtitle) {
           if (data.mode === 'bybit_api') {
@@ -2644,10 +2854,13 @@
       `;
     }
 
-    function renderChartBlock(title, chartHtml) {
+    function renderChartBlock(title, chartHtml, detailKey = '') {
       return `
         <div class="analysis-chart-block">
-          <h3>${title}</h3>
+          <div class="row" style="justify-content:space-between;align-items:center;">
+            <h3>${title}</h3>
+            ${detailKey ? `<button class="chart-details" data-detail-key="${detailKey}">${t('advanced_details_button')}</button>` : ''}
+          </div>
           ${chartHtml}
         </div>
       `;
@@ -2675,6 +2888,8 @@
       const units = opts.units || '';
       const secondary = Array.isArray(opts.secondary) ? opts.secondary : null;
       const showZoom = opts.zoom !== false;
+      const primaryLabel = opts.primaryLabel || '';
+      const secondaryLabel = opts.secondaryLabel || '';
       if (!points.length) {
         return `<div class="analysis-chart"><div class="muted">${t('status_no_analysis')}</div></div>`;
       }
@@ -2698,6 +2913,12 @@
       return `
         <div class="analysis-chart">
           ${label ? `<div class="chart-title">${label}</div>` : ''}
+          ${(primaryLabel || secondaryLabel) ? `
+            <div class="chart-legend">
+              ${primaryLabel ? `<span><span class="legend-dot" style="background: rgba(124, 196, 255, 0.9);"></span>${primaryLabel}</span>` : ''}
+              ${secondaryLabel ? `<span><span class="legend-dot" style="background: rgba(255, 179, 102, 0.9);"></span>${secondaryLabel}</span>` : ''}
+            </div>
+          ` : ''}
           ${showZoom ? `<button class="chart-zoom" data-title="${label}">🔍</button>` : ''}
           <div class="chart-tooltip"></div>
           <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet"
@@ -2755,8 +2976,12 @@
         const move = (evt) => {
           if (!values.length) return;
           const rect = svg.getBoundingClientRect();
+          const chartRect = chart.getBoundingClientRect();
           const x = evt.clientX - rect.left;
-          const ratio = Math.min(1, Math.max(0, (x / rect.width)));
+          const leftPadPx = (padding / width) * rect.width;
+          const plotWidthPx = ((width - padding * 2) / width) * rect.width;
+          const clampedPx = Math.min(leftPadPx + plotWidthPx, Math.max(leftPadPx, x));
+          const ratio = plotWidthPx > 0 ? (clampedPx - leftPadPx) / plotWidthPx : 0;
           const idx = Math.round(ratio * (values.length - 1));
           const idxSafe = Math.max(0, Math.min(values.length - 1, idx));
           const val = values[idxSafe];
@@ -2787,8 +3012,10 @@
           if (tooltip && chart) {
             tooltip.textContent = tooltipText;
             tooltip.style.opacity = '1';
-            tooltip.style.left = `${(sx / width) * 100}%`;
-            tooltip.style.top = `${(sy / height) * 100}%`;
+            const leftPx = (rect.left - chartRect.left) + (sx / width) * rect.width;
+            const topPx = (rect.top - chartRect.top) + (sy / height) * rect.height;
+            tooltip.style.left = `${leftPx}px`;
+            tooltip.style.top = `${topPx}px`;
           }
         };
 
@@ -2806,28 +3033,34 @@
       document.querySelectorAll('.analysis-chart .chart-zoom').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.preventDefault();
-          const chart = btn.closest('.analysis-chart');
-          const svg = chart ? chart.querySelector('svg[data-values]') : null;
-          if (!svg) return;
-          openChartModal(svg, btn.getAttribute('data-title') || 'Chart');
+          const block = btn.closest('.analysis-chart-block');
+          const grid = block ? block.closest('.analysis-charts-grid') : null;
+          if (!block || !grid) return;
+          const isExpanded = block.classList.contains('expanded');
+          grid.classList.toggle('focus', !isExpanded);
+          block.classList.toggle('expanded', !isExpanded);
         });
       });
     }
 
-    function openChartModal(svg, title) {
-      const modal = document.getElementById('chart_modal');
-      const body = document.getElementById('chart_modal_body');
-      const titleEl = document.getElementById('chart_modal_title');
-      if (!modal || !body) return;
-      titleEl.textContent = title || 'Chart';
-      const values = svg.getAttribute('data-values') || '[]';
-      const secondary = svg.getAttribute('data-secondary') || '';
-      const points = JSON.parse(values);
-      const secondaryPoints = secondary ? JSON.parse(secondary) : null;
-      body.innerHTML = renderLineChart(points, { units: '', secondary: secondaryPoints, zoom: false });
-      modal.classList.add('active');
-      wireAdvancedCharts();
+    function wireAdvancedDetails(detailsMap) {
+      document.querySelectorAll('.chart-details').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.getAttribute('data-detail-key') || '';
+          const body = document.getElementById('advanced_details_body');
+          if (!body) return;
+          if (state.advancedDetailsKey === key) {
+            state.advancedDetailsKey = '';
+            body.innerHTML = `<div class="muted">${t('advanced_details_empty')}</div>`;
+            return;
+          }
+          state.advancedDetailsKey = key;
+          body.innerHTML = detailsMap[key] || `<div class="muted">${t('advanced_details_empty')}</div>`;
+          body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
     }
+
 
     function renderBarChart(points) {
       const width = 120;
@@ -2868,14 +3101,25 @@
       const daily = Array.isArray(data.daily_stats) ? data.daily_stats : [];
       const hourOfDay = Array.isArray(data.hour_of_day_stats) ? data.hour_of_day_stats : [];
       const symbolHourlyRaw = Array.isArray(data.symbol_hourly_stats) ? data.symbol_hourly_stats : [];
-      const inventoryHourly = Array.isArray(data.inventory_hourly) ? data.inventory_hourly : [];
-      const inventoryDaily = Array.isArray(data.inventory_daily) ? data.inventory_daily : [];
-      const inventoryWeekly = Array.isArray(data.inventory_weekly) ? data.inventory_weekly : [];
+      const inventoryBySymbol = data.inventory_by_symbol || {};
+      const inventoryBase = symbol && inventoryBySymbol[symbol]
+        ? inventoryBySymbol[symbol]
+        : {
+            hourly: Array.isArray(data.inventory_hourly) ? data.inventory_hourly : [],
+            daily: Array.isArray(data.inventory_daily) ? data.inventory_daily : [],
+            weekly: Array.isArray(data.inventory_weekly) ? data.inventory_weekly : []
+          };
+      const inventoryHourly = Array.isArray(inventoryBase.hourly) ? inventoryBase.hourly : [];
+      const inventoryDaily = Array.isArray(inventoryBase.daily) ? inventoryBase.daily : [];
+      const inventoryWeekly = Array.isArray(inventoryBase.weekly) ? inventoryBase.weekly : [];
       const corr = data.time_correlations || {};
 
       let html = '';
       let chartsHtml = '';
-      let detailsHtml = '';
+      let performanceCharts = '';
+      let accountCharts = '';
+      let inventoryCharts = '';
+      const detailsMap = {};
 
       html += `<h3>${t('advanced_heading_time_correlation')}</h3>`;
       html += '<div class="row">';
@@ -2884,12 +3128,14 @@
       html += `<div class="card"><div class="label">${t('advanced_label_corr_volume_pnl')}</div><div class="value">${formatSigned(corr.corr_volume_pnl || 0, 3)}</div></div>`;
       html += '</div>';
 
-      chartsHtml += renderChartBlock(
+      performanceCharts += renderChartBlock(
         t('advanced_heading_daily_performance'),
         renderLineChart(
           daily.map(row => Number(row.daily_pnl || 0)),
-          { units: '', secondary: daily.map(row => Number(row.daily_volume || 0)) }
-        )
+          { units: '', secondary: daily.map(row => Number(row.daily_volume || 0)),
+            primaryLabel: t('advanced_series_primary'), secondaryLabel: t('advanced_series_secondary') }
+        ),
+        'daily'
       );
       const dailyRows = daily.map(row => `
         <tr>
@@ -2902,29 +3148,28 @@
           <td>${formatSigned(row.delta_pnl || 0, 4)}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [
-            t('advanced_label_date'),
-            t('advanced_label_trades'),
-            t('advanced_label_notional'),
-            t('advanced_label_pnl'),
-            t('advanced_label_delta_trades'),
-            t('advanced_label_delta_notional'),
-            t('advanced_label_delta_pnl')
-          ],
-          dailyRows
-        )
+      detailsMap.daily = renderAdvancedTable(
+        [
+          t('advanced_label_date'),
+          t('advanced_label_trades'),
+          t('advanced_label_notional'),
+          t('advanced_label_pnl'),
+          t('advanced_label_delta_trades'),
+          t('advanced_label_delta_notional'),
+          t('advanced_label_delta_pnl')
+        ],
+        dailyRows
       );
 
       const hourlySlice = hourly.slice(-168);
-      chartsHtml += renderChartBlock(
+      performanceCharts += renderChartBlock(
         t('advanced_heading_hourly_performance'),
         renderLineChart(
           hourlySlice.map(row => Number(row.hourly_pnl || 0)),
-          { units: '', secondary: hourlySlice.map(row => Number(row.hourly_volume || 0)) }
-        )
+          { units: '', secondary: hourlySlice.map(row => Number(row.hourly_volume || 0)),
+            primaryLabel: t('advanced_series_primary'), secondaryLabel: t('advanced_series_secondary') }
+        ),
+        'hourly'
       );
       if (hourly.length > hourlySlice.length) {
         html += `<div class="muted">${currentLang === 'zh' ? `仅显示最近 ${hourlySlice.length} 小时` : `Showing last ${hourlySlice.length} hours`}</div>`;
@@ -2940,28 +3185,27 @@
           <td>${formatSigned(row.delta_pnl || 0, 4)}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [
-            t('advanced_label_hour'),
-            t('advanced_label_trades'),
-            t('advanced_label_notional'),
-            t('advanced_label_pnl'),
-            t('advanced_label_delta_trades'),
-            t('advanced_label_delta_notional'),
-            t('advanced_label_delta_pnl')
-          ],
-          hourlyRows
-        )
+      detailsMap.hourly = renderAdvancedTable(
+        [
+          t('advanced_label_hour'),
+          t('advanced_label_trades'),
+          t('advanced_label_notional'),
+          t('advanced_label_pnl'),
+          t('advanced_label_delta_trades'),
+          t('advanced_label_delta_notional'),
+          t('advanced_label_delta_pnl')
+        ],
+        hourlyRows
       );
 
-      chartsHtml += renderChartBlock(
+      performanceCharts += renderChartBlock(
         t('advanced_heading_hour_of_day'),
         renderLineChart(
           hourOfDay.map(row => Number(row.hour_pnl || 0)),
-          { units: '', secondary: hourOfDay.map(row => Number(row.hour_volume || 0)) }
-        )
+          { units: '', secondary: hourOfDay.map(row => Number(row.hour_volume || 0)),
+            primaryLabel: t('advanced_series_primary'), secondaryLabel: t('advanced_series_secondary') }
+        ),
+        'hour_of_day'
       );
       const hodRows = hourOfDay.map(row => `
         <tr>
@@ -2971,17 +3215,14 @@
           <td>${formatSigned(row.hour_pnl || 0, 4)}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [
-            t('advanced_label_hour'),
-            t('advanced_label_trades'),
-            t('advanced_label_notional'),
-            t('advanced_label_pnl')
-          ],
-          hodRows
-        )
+      detailsMap.hour_of_day = renderAdvancedTable(
+        [
+          t('advanced_label_hour'),
+          t('advanced_label_trades'),
+          t('advanced_label_notional'),
+          t('advanced_label_pnl')
+        ],
+        hodRows
       );
 
       html += `<h3>${t('advanced_heading_symbol_hourly')}</h3>`;
@@ -3003,30 +3244,29 @@
           <td>${formatNumber(row.sell_notional, 2)}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [
-            t('th_symbol'),
-            t('advanced_label_hour'),
-            t('advanced_label_buy_count'),
-            t('advanced_label_sell_count'),
-            t('advanced_label_avg_buy_qty'),
-            t('advanced_label_avg_sell_qty'),
-            t('advanced_label_buy_notional'),
-            t('advanced_label_sell_notional')
-          ],
-          symbolHourlyRows
-        )
+      detailsMap.symbol_hourly = renderAdvancedTable(
+        [
+          t('th_symbol'),
+          t('advanced_label_hour'),
+          t('advanced_label_buy_count'),
+          t('advanced_label_sell_count'),
+          t('advanced_label_avg_buy_qty'),
+          t('advanced_label_avg_sell_qty'),
+          t('advanced_label_buy_notional'),
+          t('advanced_label_sell_notional')
+        ],
+        symbolHourlyRows
       );
 
       const invHourlySlice = inventoryHourly.slice(-168);
-      chartsHtml += renderChartBlock(
+      inventoryCharts += renderChartBlock(
         t('advanced_heading_inventory_hourly'),
         renderLineChart(
           invHourlySlice.map(row => Number(row.cumulative_net_qty || 0)),
-          { units: '', secondary: invHourlySlice.map(row => Number(row.trade_count || 0)) }
-        )
+          { units: '', secondary: invHourlySlice.map(row => Number(row.trade_count || 0)),
+            primaryLabel: currentLang === 'zh' ? '净数量' : 'Net Qty', secondaryLabel: t('advanced_series_trades') }
+        ),
+        'inventory_hourly'
       );
       const invHourlyRows = invHourlySlice.map(row => `
         <tr>
@@ -3036,26 +3276,25 @@
           <td>${row.trade_count || 0}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [
-            t('advanced_label_hour'),
-            t('advanced_label_net_qty'),
-            t('advanced_label_cum_net_qty'),
-            t('advanced_label_trades')
-          ],
-          invHourlyRows
-        )
+      detailsMap.inventory_hourly = renderAdvancedTable(
+        [
+          t('advanced_label_hour'),
+          t('advanced_label_net_qty'),
+          t('advanced_label_cum_net_qty'),
+          t('advanced_label_trades')
+        ],
+        invHourlyRows
       );
 
       const invDailySlice = inventoryDaily.slice(-60);
-      chartsHtml += renderChartBlock(
+      inventoryCharts += renderChartBlock(
         t('advanced_heading_inventory_daily'),
         renderLineChart(
           invDailySlice.map(row => Number(row.cumulative_net_qty || 0)),
-          { units: '', secondary: invDailySlice.map(row => Number(row.trade_count || 0)) }
-        )
+          { units: '', secondary: invDailySlice.map(row => Number(row.trade_count || 0)),
+            primaryLabel: currentLang === 'zh' ? '净数量' : 'Net Qty', secondaryLabel: t('advanced_series_trades') }
+        ),
+        'inventory_daily'
       );
       const invDailyRows = invDailySlice.map(row => `
         <tr>
@@ -3065,25 +3304,24 @@
           <td>${row.trade_count || 0}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [
-            t('advanced_label_date'),
-            t('advanced_label_net_qty'),
-            t('advanced_label_cum_net_qty'),
-            t('advanced_label_trades')
-          ],
-          invDailyRows
-        )
+      detailsMap.inventory_daily = renderAdvancedTable(
+        [
+          t('advanced_label_date'),
+          t('advanced_label_net_qty'),
+          t('advanced_label_cum_net_qty'),
+          t('advanced_label_trades')
+        ],
+        invDailyRows
       );
 
-      chartsHtml += renderChartBlock(
+      inventoryCharts += renderChartBlock(
         t('advanced_heading_inventory_weekly'),
         renderLineChart(
           inventoryWeekly.map(row => Number(row.cumulative_net_qty || 0)),
-          { units: '', secondary: inventoryWeekly.map(row => Number(row.trade_count || 0)) }
-        )
+          { units: '', secondary: inventoryWeekly.map(row => Number(row.trade_count || 0)),
+            primaryLabel: currentLang === 'zh' ? '净数量' : 'Net Qty', secondaryLabel: t('advanced_series_trades') }
+        ),
+        'inventory_weekly'
       );
       const invWeeklyRows = inventoryWeekly.map(row => `
         <tr>
@@ -3093,28 +3331,26 @@
           <td>${row.trade_count || 0}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [
-            t('advanced_label_week'),
-            t('advanced_label_net_qty'),
-            t('advanced_label_cum_net_qty'),
-            t('advanced_label_trades')
-          ],
-          invWeeklyRows
-        )
+      detailsMap.inventory_weekly = renderAdvancedTable(
+        [
+          t('advanced_label_week'),
+          t('advanced_label_net_qty'),
+          t('advanced_label_cum_net_qty'),
+          t('advanced_label_trades')
+        ],
+        invWeeklyRows
       );
 
       html += `<h3>${t('advanced_heading_hourly_balance')}</h3>`;
-      html += `<div class="muted">${t('advanced_balance_note')}</div>`;
       const balanceSlice = hourly.slice(-168);
-      chartsHtml += renderChartBlock(
+      accountCharts += renderChartBlock(
         t('advanced_heading_hourly_balance'),
         renderLineChart(
           balanceSlice.map(row => Number(row.cumulative_net_pnl || 0)),
-          { units: '', secondary: balanceSlice.map(row => Number(row.hourly_volume || 0)) }
-        )
+          { units: '', secondary: balanceSlice.map(row => Number(row.hourly_volume || 0)),
+            primaryLabel: t('advanced_series_primary'), secondaryLabel: t('advanced_series_secondary') }
+        ),
+        'balance'
       );
       const balanceRows = balanceSlice.map(row => `
         <tr>
@@ -3122,24 +3358,33 @@
           <td>${formatSigned(row.cumulative_net_pnl || 0, 4)}</td>
         </tr>
       `);
-      detailsHtml += renderDetailsTable(
-        currentLang === 'zh' ? '明细' : 'Details',
-        renderAdvancedTable(
-          [t('advanced_label_hour'), t('advanced_label_pnl')],
-          balanceRows
-        )
+      detailsMap.balance = renderAdvancedTable(
+        [t('advanced_label_hour'), t('advanced_label_pnl')],
+        balanceRows
       );
 
+      chartsHtml += performanceCharts
+        ? `<h3>${currentLang === 'zh' ? '交易表现' : 'Performance'}</h3><div class="analysis-charts-grid">${performanceCharts}</div>`
+        : '';
+      chartsHtml += accountCharts
+        ? `<h3>${currentLang === 'zh' ? '账户表现' : 'Account'}</h3><div class="analysis-charts-grid single">${accountCharts}</div>`
+        : '';
+      chartsHtml += inventoryCharts
+        ? `<h3>${currentLang === 'zh' ? '库存变化' : 'Inventory'}</h3><div class="analysis-charts-grid">${inventoryCharts}</div>`
+        : '';
       if (chartsHtml) {
-        html += `<div class="analysis-charts-grid">${chartsHtml}</div>`;
+        html += chartsHtml;
       }
-      if (detailsHtml) {
-        html += `<h3>${currentLang === 'zh' ? '明细表' : 'Detailed Tables'}</h3>`;
-        html += detailsHtml;
-      }
+      html += `
+        <h3>${t('advanced_details_title')}</h3>
+        <div id="advanced_details_body" class="analysis-summary">
+          <div class="muted">${t('advanced_details_empty')}</div>
+        </div>
+      `;
 
       content.innerHTML = html || `<div class="muted">${t('status_no_analysis')}</div>`;
       wireAdvancedCharts();
+      wireAdvancedDetails(detailsMap);
     }
 
     async function fetchPositions() {
@@ -4287,6 +4532,7 @@
       return `${y}${m}${day}`;
     }
 
+
     function buildExportFilename(prefix, symbol, startDate, endDate, days) {
       const symbolTag = symbol ? symbol : 'ALL';
       const startTag = startDate ? formatDateStamp(`${startDate}T00:00:00Z`) : '';
@@ -4501,10 +4747,6 @@
     document.getElementById('clear_history').addEventListener('click', clearHistory);
     document.getElementById('refresh_analysis').addEventListener('click', fetchAnalysis);
     document.getElementById('generate_advanced').addEventListener('click', fetchAdvancedAnalysis);
-    document.getElementById('chart_modal_close').addEventListener('click', () => {
-      const modal = document.getElementById('chart_modal');
-      if (modal) modal.classList.remove('active');
-    });
     document.getElementById('refresh_positions').addEventListener('click', fetchPositions);
     document.getElementById('enable_trading').addEventListener('click', enableTrading);
     document.getElementById('disable_trading').addEventListener('click', disableTrading);

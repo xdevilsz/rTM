@@ -32,6 +32,8 @@ load_dotenv(Path(__file__).resolve().parent / ".env")  # Also check script direc
 
 ROOT = Path(__file__).resolve().parent
 DASHBOARD_DIR = ROOT / "dashboard"
+ADMIN_CONFIG_PATH = ROOT / "admin_config.json"
+REPORTS_DIR = ROOT / "reports"
 SERVER_START_TS = time.time()
 
 # Global state for realtime mode
@@ -423,6 +425,95 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 return pos
         return None
 
+    def _admin_enabled(self) -> bool:
+        try:
+            return ADMIN_CONFIG_PATH.exists()
+        except Exception:
+            return False
+
+    def _read_admin_config(self) -> dict:
+        data = _read_json(ADMIN_CONFIG_PATH)
+        return data or {}
+
+    def _send_file(self, path: Path, content_type: str):
+        if not path.exists():
+            self.send_error(404, "File not found")
+            return
+        try:
+            data = path.read_bytes()
+        except Exception:
+            self.send_error(500, "Failed to read file")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    def _build_report_summary(self, analysis: dict) -> list[str]:
+        basic = analysis.get("basic") or {}
+        perf = analysis.get("performance") or {}
+        risk = analysis.get("risk") or {}
+        return [
+            f"Total trades: {basic.get('total_trades', 0)}",
+            f"Total volume: {basic.get('total_volume', 0):.2f}",
+            f"Net PnL: {basic.get('net_pnl', 0):.4f}",
+            f"Win rate: {perf.get('win_rate', 0) * 100:.2f}%",
+            f"Max drawdown: {perf.get('max_drawdown', 0):.4f}",
+            f"Volatility (annual): {risk.get('volatility_annualised', 0):.4f}",
+        ]
+
+    def _generate_pdf_report(self, analysis: dict, title: str) -> Path | None:
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.pdfgen import canvas
+        except Exception:
+            return None
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+        path = REPORTS_DIR / filename
+        c = canvas.Canvas(str(path), pagesize=letter)
+        width, height = letter
+        y = height - 60
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(60, y, title)
+        y -= 30
+        c.setFont("Helvetica", 11)
+        for line in self._build_report_summary(analysis):
+            c.drawString(60, y, line)
+            y -= 18
+            if y < 80:
+                c.showPage()
+                y = height - 60
+        c.showPage()
+        c.save()
+        return path
+
+    def _generate_pptx_report(self, analysis: dict, title: str) -> Path | None:
+        try:
+            from pptx import Presentation
+        except Exception:
+            return None
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pptx"
+        path = REPORTS_DIR / filename
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[0])
+        slide.shapes.title.text = title
+        slide.placeholders[1].text = "Account trading report"
+        slide2 = prs.slides.add_slide(prs.slide_layouts[1])
+        slide2.shapes.title.text = "Summary"
+        body = slide2.shapes.placeholders[1].text_frame
+        for line in self._build_report_summary(analysis):
+            p = body.add_paragraph()
+            p.text = line
+        prs.save(str(path))
+        return path
+
 
     def do_GET(self):
         # Parse query parameters
@@ -475,6 +566,10 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             }
             return self._write_json(payload, status=200)
 
+        # Admin status endpoint
+        if path == "/api/admin/status":
+            return self._write_json({"ok": self._admin_enabled()}, status=200)
+
         # Metrics endpoint
         if path == "/api/metrics":
             if self.mode == "realtime":
@@ -516,6 +611,36 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 print(f"⚠️  Error in /api/analysis/fills: {error_msg}")
                 print(traceback.format_exc())
                 return self._write_json({"ok": False, "error": f"Analysis export error: {error_msg}"}, status=500)
+
+        if path == "/api/admin/report":
+            if not self._admin_enabled():
+                return self._write_json({"ok": False, "error": "admin disabled"}, status=403)
+            fmt = (query_params.get("format") or ["pdf"])[0].lower()
+            symbol = (query_params.get("symbol") or [""])[0]
+            start = (query_params.get("start") or [""])[0]
+            end = (query_params.get("end") or [""])[0]
+            days = (query_params.get("days") or ["30"])[0]
+            qp = {"days": [days], "symbol": [symbol]}
+            if start:
+                qp["start"] = [start]
+            if end:
+                qp["end"] = [end]
+            try:
+                analysis = self._get_analysis(qp)
+            except Exception as e:
+                return self._write_json({"ok": False, "error": f"analysis error: {e}"}, status=500)
+            if not analysis:
+                return self._write_json({"ok": False, "error": "analysis unavailable"}, status=502)
+            title = f"ResTM Report {datetime.utcnow().strftime('%Y-%m-%d')}"
+            if fmt == "pptx":
+                path = self._generate_pptx_report(analysis, title)
+                if not path:
+                    return self._write_json({"ok": False, "error": "pptx generator not available"}, status=500)
+                return self._send_file(path, "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            path = self._generate_pdf_report(analysis, title)
+            if not path:
+                return self._write_json({"ok": False, "error": "pdf generator not available"}, status=500)
+            return self._send_file(path, "application/pdf")
 
         if path == "/api/orders/history":
             if self.mode not in ("sync", "realtime", "file"):

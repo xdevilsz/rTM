@@ -1857,12 +1857,13 @@
         const days = document.getElementById('analysis_timeframe').value;
         const symbol = getAnalysisSymbol();
         const qs = new URLSearchParams({ days, symbol: symbol || '' });
+        qs.set('source', 'rest');
+        qs.set('limit', '20000');
         if (isAnalysisDateRangeEnabled()) {
           const startVal = document.getElementById('analysis_start')?.value || '';
           const endVal = document.getElementById('analysis_end')?.value || '';
           if (startVal) qs.set('start', startVal);
           if (endVal) qs.set('end', endVal);
-          if (startVal || endVal) qs.set('source', 'rest');
         }
         const res = await fetch(`/api/analysis?${qs.toString()}`, { cache: 'no-store' });
         if (!res.ok) {

@@ -231,7 +231,10 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def _force_convert_all(self, obj):
         """Recursively convert all objects (especially Timestamps) into JSON-safe types."""

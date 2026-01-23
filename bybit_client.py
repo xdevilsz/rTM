@@ -155,6 +155,61 @@ class BybitAPIClient:
             })
         
         return fills
+
+    def fetch_executions_page(
+        self,
+        limit: int = 200,
+        symbol: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        cursor: Optional[str] = None
+    ) -> tuple[List[Dict], Optional[str]]:
+        """Fetch a single page of executions and return (fills, next_cursor)."""
+        params = {
+            "category": self.category,
+            "limit": str(limit),
+        }
+        if symbol:
+            params["symbol"] = symbol
+        if start_time:
+            params["startTime"] = str(start_time)
+        if end_time:
+            params["endTime"] = str(end_time)
+        if cursor:
+            params["cursor"] = cursor
+
+        data = self._signed_request("/v5/execution/list", params)
+        if not data:
+            return [], None
+
+        result = data.get("result") or {}
+        rows = result.get("list") or []
+        next_cursor = result.get("nextPageCursor") or None
+
+        fills = []
+        for r in rows:
+            exec_type = (r.get("execType") or "").lower()
+            ts_ms = int(r.get("execTime", 0))
+            qty = float(r.get("execQty", 0))
+            price = float(r.get("execPrice", 0))
+            notional = float(r.get("execValue", 0)) or (qty * price if qty and price else 0)
+
+            fills.append({
+                "exec_type": exec_type,
+                "ts": ts_ms / 1000 if ts_ms else 0,
+                "order_id": r.get("orderId") or "",
+                "side": r.get("side") or "",
+                "qty": qty,
+                "price": price,
+                "notional": notional,
+                "fee": float(r.get("execFee", 0)),
+                "fee_ccy": r.get("feeCurrency") or "",
+                "symbol": r.get("symbol") or "",
+                "exec_pnl": float(r.get("execPnl", 0)),
+                "is_maker": bool(r.get("isMaker")) if r.get("isMaker") is not None else None,
+            })
+
+        return fills, next_cursor
     
     def fetch_positions(self, settle_coin: Optional[str] = None, symbol: Optional[str] = None) -> List[Dict]:
         """Fetch current positions"""

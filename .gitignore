@@ -6,3 +6,6 @@ __pycache__/
 .DS_Store
 *.sqlite3
 runtime/
+Order Histories/
+Order_Histories/
+scripts/compare_bybit_csv.py

@@ -9,7 +9,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler
 try:
     # Python 3.7+: handles concurrent requests (critical when /api/analysis is slow)
@@ -231,7 +231,10 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def _force_convert_all(self, obj):
         """Recursively convert all objects (especially Timestamps) into JSON-safe types."""
@@ -499,6 +502,21 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             return self._write_json(metrics, status=200)
 
         # Analysis endpoint (for sync and realtime modes)
+        if path == "/api/analysis/fills":
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
+            try:
+                fills, error = self._get_analysis_fills(query_params)
+                if error:
+                    return self._write_json({"ok": False, "error": error, "fills": []}, status=502)
+                return self._write_json({"ok": True, "fills": fills}, status=200)
+            except Exception as e:
+                import traceback
+                error_msg = str(e)
+                print(f"⚠️  Error in /api/analysis/fills: {error_msg}")
+                print(traceback.format_exc())
+                return self._write_json({"ok": False, "error": f"Analysis export error: {error_msg}"}, status=500)
+
         if path == "/api/analysis":
             if self.mode not in ("sync", "realtime", "file"):
                 return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
@@ -1104,28 +1122,166 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         metrics["last_update"] = last_update
         
         return metrics
-    
-    def _get_analysis(self, query_params: dict) -> dict | None:
-        """Get comprehensive analysis for sync/realtime/file modes"""
-        fills = []
-        # Defaults so realtime mode never references undefined variables
+
+    def _parse_date_range(self, query_params: dict) -> tuple[int | None, int | None]:
+        start_list = query_params.get("start", [""])
+        end_list = query_params.get("end", [""])
+        start_str = start_list[0] if isinstance(start_list, list) and start_list else (start_list or "")
+        end_str = end_list[0] if isinstance(end_list, list) and end_list else (end_list or "")
+        if not start_str and not end_str:
+            return None, None
+        start_ms = None
+        end_ms = None
+        try:
+            if start_str:
+                start_dt = datetime.strptime(start_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                start_ms = int(start_dt.timestamp() * 1000)
+            if end_str:
+                end_dt = datetime.strptime(end_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                end_dt = end_dt + timedelta(days=1) - timedelta(milliseconds=1)
+                end_ms = int(end_dt.timestamp() * 1000)
+        except Exception:
+            return None, None
+        return start_ms, end_ms
+
+    def _merge_fills_unique(self, base: list[dict], extra: list[dict]) -> list[dict]:
+        def _key(f: dict) -> tuple:
+            ts_val = _normalize_ts(f.get("ts") or f.get("timestamp"))
+            ts_ms = int(ts_val * 1000) if ts_val else 0
+            qty = round(float(f.get("qty") or 0), 10)
+            price = round(float(f.get("price") or 0), 10)
+            return (
+                f.get("order_id") or "",
+                f.get("side") or "",
+                f.get("symbol") or "",
+                ts_ms,
+                qty,
+                price,
+            )
+
+        seen = set()
+        merged: list[dict] = []
+        for f in base:
+            k = _key(f)
+            if k in seen:
+                continue
+            seen.add(k)
+            merged.append(f)
+        for f in extra:
+            k = _key(f)
+            if k in seen:
+                continue
+            seen.add(k)
+            merged.append(f)
+        return merged
+
+    def _get_analysis_fills(self, query_params: dict) -> tuple[list[dict], str | None]:
+        fills: list[dict] = []
         days = 30
         symbol_list = query_params.get("symbol", [None])
         symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
-        
+        source_list = query_params.get("source", [""])
+        source = source_list[0] if isinstance(source_list, list) and source_list else (source_list or "")
+        force_rest = str(source).lower() == "rest"
+        start_ms, end_ms = self._parse_date_range(query_params)
+        has_range = start_ms is not None or end_ms is not None
+
+        def _fetch_rest_fills(limit: int, start_time: int, end_time: int, symbol_filter: str | None) -> list[dict]:
+            results: list[dict] = []
+            page_limit = min(200, max(1, limit))
+            max_range_ms = 7 * 24 * 60 * 60 * 1000
+            window_start = start_time
+            while len(results) < limit and window_start <= end_time:
+                window_end = min(end_time, window_start + max_range_ms - 1)
+                cursor: str | None = None
+                window_count = 0
+                while len(results) < limit:
+                    batch, cursor = self.bybit_client.fetch_executions_page(
+                        limit=page_limit,
+                        symbol=symbol_filter,
+                        start_time=window_start,
+                        end_time=window_end,
+                        cursor=cursor
+                    )
+                    if not batch:
+                        break
+                    results.extend(batch)
+                    window_count += len(batch)
+                    if not cursor:
+                        break
+                window_start = window_end + 1
+            return results[:limit]
+
         try:
+            if force_rest:
+                if not self.bybit_key or not self.bybit_secret:
+                    return [], "API credentials not set for REST export"
+                if not self.bybit_client:
+                    self.bybit_client = BybitAPIClient(
+                        self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                    )
+                days_list = query_params.get("days", ["30"])
+                days_val = days_list[0] if isinstance(days_list, list) and len(days_list) > 0 else (days_list if isinstance(days_list, str) else "30")
+                days = int(days_val) if days_val else 30
+                limit_list = query_params.get("limit", [None])
+                limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else None)
+                if limit_val not in (None, ""):
+                    limit = int(limit_val)
+                else:
+                    limit = 20000 if days >= 14 or has_range else 5000
+
+                if end_ms is None:
+                    end_ms = int(time.time() * 1000)
+                if start_ms is None:
+                    start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+
+                fills = _fetch_rest_fills(limit, start_ms, end_ms, symbol)
+                if symbol:
+                    fills = [f for f in fills if f.get("symbol") == symbol]
+                trade_fills = [f for f in fills if not f.get("exec_type") or f.get("exec_type") == "trade"]
+                return trade_fills, None
+
             if self.mode == "realtime":
                 days_list = query_params.get("days", ["30"])
                 days_val = days_list[0] if isinstance(days_list, list) and len(days_list) > 0 else (days_list if isinstance(days_list, str) else "30")
                 days = int(days_val) if days_val else 30
-                limit_list = query_params.get("limit", ["1000"])
-                limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else "1000")
-                limit = int(limit_val) if limit_val else 1000
+                limit_list = query_params.get("limit", [None])
+                limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else None)
+                if limit_val not in (None, ""):
+                    limit = int(limit_val)
+                else:
+                    limit = 20000 if has_range else 1000
 
-                with _realtime_lock:
-                    fills = list(_realtime_data["fills"])
+                if force_rest:
+                    if not self.bybit_client:
+                        self.bybit_client = BybitAPIClient(
+                            self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                        )
+                    if end_ms is None:
+                        end_ms = int(time.time() * 1000)
+                    if start_ms is None:
+                        start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                    fills = _fetch_rest_fills(limit, start_ms, end_ms, symbol)
+                else:
+                    with _realtime_lock:
+                        fills = list(_realtime_data["fills"])
 
-                if days > 0:
+                if not force_rest and has_range:
+                    if end_ms is None:
+                        end_ms = int(time.time() * 1000)
+                    if start_ms is None:
+                        start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                    if not self.bybit_client:
+                        self.bybit_client = BybitAPIClient(
+                            self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                        )
+                    rest_fills = _fetch_rest_fills(limit, start_ms, end_ms, symbol)
+                    start_sec = start_ms / 1000 if start_ms else None
+                    end_sec = end_ms / 1000 if end_ms else None
+                    realtime_scoped = [f for f in fills if (start_sec is None or _normalize_ts(f.get("ts")) >= start_sec)
+                                       and (end_sec is None or _normalize_ts(f.get("ts")) <= end_sec)]
+                    fills = self._merge_fills_unique(rest_fills, realtime_scoped)
+                elif not force_rest and days > 0:
                     cutoff = time.time() - (days * 24 * 60 * 60)
                     fills = [f for f in fills if _normalize_ts(f.get("ts")) >= cutoff]
                 if symbol:
@@ -1136,85 +1292,38 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                         self.bybit_client = BybitAPIClient(
                             self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
                         )
-                    end_time = int(time.time() * 1000)
-                    start_time = end_time - (days * 24 * 60 * 60 * 1000)
-                    current_end = end_time
-                    max_per_request = 200
-                    max_range_ms = 7 * 24 * 60 * 60 * 1000
-                    while len(fills) < limit and current_end > start_time:
-                        window_start = max(start_time, current_end - max_range_ms)
-                        batch = self.bybit_client.fetch_executions(
-                            limit=max_per_request,
-                            symbol=symbol,
-                            start_time=window_start,
-                            end_time=current_end
-                        )
-                        if not batch:
-                            break
-                        fills.extend(batch)
-                        if len(batch) < max_per_request:
-                            current_end = window_start - 1
-                            continue
-                        oldest_ts = int(min(f["ts"] * 1000 for f in batch))
-                        if oldest_ts >= current_end:
-                            break
-                        current_end = oldest_ts - 1
-                        if current_end <= start_time:
-                            break
-                    fills = fills[:limit]
+                    if end_ms is None:
+                        end_ms = int(time.time() * 1000)
+                    if start_ms is None:
+                        start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                    fills = _fetch_rest_fills(limit, start_ms, end_ms, symbol)
                     if not fills and self.bybit_client and self.bybit_client.last_error:
-                        return {
-                            "basic": {"total_trades": 0, "message": self.bybit_client.last_error},
-                            "performance": {},
-                            "risk": {},
-                            "maker_taker": {},
-                            "consistency": {"score": 0, "message": "API error while fetching trades"},
-                            "hourly_stats": [],
-                            "daily_stats": [],
-                            "symbol_stats": [],
-                        }
+                        return [], self.bybit_client.last_error
 
             elif self.mode == "sync":
                 if not self.bybit_client:
                     self.bybit_client = BybitAPIClient(
                         self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
                     )
-                # Safely parse query parameters with defaults
-                limit_list = query_params.get("limit", ["1000"])
-                limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else "1000")
-                limit = int(limit_val) if limit_val else 1000
-                
+                limit_list = query_params.get("limit", [None])
+                limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else None)
+                if limit_val not in (None, ""):
+                    limit = int(limit_val)
+                else:
+                    limit = 20000 if has_range else 1000
+
                 days_list = query_params.get("days", ["30"])
                 days_val = days_list[0] if isinstance(days_list, list) and len(days_list) > 0 else (days_list if isinstance(days_list, str) else "30")
                 days = int(days_val) if days_val else 30
-                
+
                 symbol_list = query_params.get("symbol", [None])
                 symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
 
-                end_time = int(time.time() * 1000)
-                start_time = end_time - (days * 24 * 60 * 60 * 1000)
-
-                current_end = end_time
-                max_per_request = 200
-                while len(fills) < limit and current_end > start_time:
-                    batch = self.bybit_client.fetch_executions(
-                        limit=max_per_request,
-                        symbol=symbol,
-                        start_time=start_time,
-                        end_time=current_end
-                    )
-                    if not batch:
-                        break
-                    fills.extend(batch)
-                    if len(batch) < max_per_request:
-                        break
-                    oldest_ts = int(min(f["ts"] * 1000 for f in batch))
-                    if oldest_ts >= current_end:
-                        break
-                    current_end = oldest_ts - 1
-                    if current_end <= start_time:
-                        break
-                fills = fills[:limit]
+                if end_ms is None:
+                    end_ms = int(time.time() * 1000)
+                if start_ms is None:
+                    start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                fills = _fetch_rest_fills(limit, start_ms, end_ms, symbol)
 
             elif self.mode == "file":
                 days_list = query_params.get("days", ["30"])
@@ -1225,35 +1334,48 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 metrics = _read_json(metrics_path) or {}
                 fills = metrics.get("fills") or []
 
-                if days > 0:
+                if has_range:
+                    if end_ms is None:
+                        end_ms = int(time.time() * 1000)
+                    if start_ms is None:
+                        start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                    start_sec = start_ms / 1000 if start_ms else None
+                    end_sec = end_ms / 1000 if end_ms else None
+                    fills = [f for f in fills if (start_sec is None or _normalize_ts(f.get("ts") or f.get("timestamp")) >= start_sec)
+                             and (end_sec is None or _normalize_ts(f.get("ts") or f.get("timestamp")) <= end_sec)]
+                elif days > 0:
                     cutoff = time.time() - (days * 24 * 60 * 60)
                     fills = [f for f in fills if _normalize_ts(f.get("ts") or f.get("timestamp")) >= cutoff]
                 if symbol:
                     fills = [f for f in fills if f.get("symbol") == symbol]
-
             else:
-                # File/bybit_api modes don't support analysis
                 fills = []
-        
+
         except Exception as e:
             import traceback
             print(f"⚠️  Error fetching fills for analysis: {e}")
             print(traceback.format_exc())
-            # Return empty analysis structure on error
+            return [], f"Error fetching data: {str(e)}"
+
+        trade_fills = [f for f in fills if not f.get("exec_type") or f.get("exec_type") == "trade"]
+        return trade_fills, None
+
+    def _get_analysis(self, query_params: dict) -> dict | None:
+        """Get comprehensive analysis for sync/realtime/file modes"""
+        trade_fills, error = self._get_analysis_fills(query_params)
+        if error:
             return {
-                "basic": {"total_trades": 0, "message": f"Error fetching data: {str(e)}"},
+                "basic": {"total_trades": 0, "message": error},
                 "performance": {},
                 "risk": {},
                 "maker_taker": {},
-                "consistency": {"score": 0, "message": "Error occurred"},
+                "consistency": {"score": 0, "message": "API error while fetching trades"},
                 "hourly_stats": [],
                 "daily_stats": [],
                 "symbol_stats": [],
             }
-        
-        trade_fills = [f for f in fills if not f.get("exec_type") or f.get("exec_type") == "trade"]
+
         if not trade_fills:
-            # Return empty analysis structure instead of None
             return {
                 "basic": {"total_trades": 0, "message": "No trade data available yet. Waiting for trades..."},
                 "performance": {},
@@ -1264,7 +1386,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 "daily_stats": [],
                 "symbol_stats": [],
             }
-        
+
         try:
             normalized_fills = []
             for f in trade_fills:
@@ -1276,16 +1398,14 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 normalized_fills.append(copy)
             analyzer = TradeAnalyzer(normalized_fills)
             analysis = analyzer.get_comprehensive_analysis()
-            # Convert pandas Timestamps and other non-serializable objects to strings
             analysis = self._serialize_analysis(analysis)
             return analysis
         except Exception as e:
             import traceback
             print(f"⚠️  Error analyzing trades: {e}")
             print(traceback.format_exc())
-            # Return partial analysis on error
             return {
-                "basic": {"total_trades": len(fills), "message": f"Analysis error: {str(e)}"},
+                "basic": {"total_trades": len(trade_fills), "message": f"Analysis error: {str(e)}"},
                 "performance": {},
                 "risk": {},
                 "maker_taker": {},
@@ -1757,9 +1877,24 @@ if __name__ == "__main__":
             return self._write_json(metrics, status=200)
 
         # Analysis endpoint (for sync and realtime modes)
+        if path == "/api/analysis/fills":
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
+            try:
+                fills, error = self._get_analysis_fills(query_params)
+                if error:
+                    return self._write_json({"ok": False, "error": error, "fills": []}, status=502)
+                return self._write_json({"ok": True, "fills": fills}, status=200)
+            except Exception as e:
+                import traceback
+                error_msg = str(e)
+                print(f"⚠️  Error in /api/analysis/fills: {error_msg}")
+                print(traceback.format_exc())
+                return self._write_json({"ok": False, "error": f"Analysis export error: {error_msg}"}, status=500)
+
         if path == "/api/analysis":
-            if self.mode not in ("sync", "realtime"):
-                return self._write_json({"ok": False, "error": "analysis only available in sync/realtime modes"}, status=400)
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
             
             try:
                 analysis = self._get_analysis(query_params)

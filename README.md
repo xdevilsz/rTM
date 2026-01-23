@@ -2,6 +2,8 @@
 
 Resilient Trade Manager is a real-time Bybit monitoring and analytics dashboard with charting, advanced analytics, and optional trading controls. It runs locally and supports realtime streams, multi-symbol analysis, and premium chart overlays.
 
+**Exchange support:** Bybit only (more exchanges planned).
+
 ## Highlights
 
 - Realtime + sync modes (REST + WebSocket)
@@ -14,6 +16,10 @@ Resilient Trade Manager is a real-time Bybit monitoring and analytics dashboard 
 - Smart TP/SL (chase limit + split stop logic)
 - Bilingual UI (EN / 中文)
 - About & donation section with Resilient Lab 505 links
+
+## Bybit Referral
+
+Use referral code **RESILIENTLAB** when signing up on Bybit to claim up to **$30,100** in deposit bonuses (Bybit terms apply).
 
 ## Quick Setup
 

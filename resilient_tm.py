@@ -435,6 +435,20 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         data = _read_json(ADMIN_CONFIG_PATH)
         return data or {}
 
+    def _admin_token(self) -> str:
+        cfg = self._read_admin_config()
+        return str(cfg.get("token") or "").strip()
+
+    def _admin_authorized(self, query_params: dict) -> bool:
+        if not self._admin_enabled():
+            return False
+        token = self._admin_token()
+        if not token:
+            return False
+        qp_token = (query_params.get("token") or [""])[0]
+        header_token = self.headers.get("X-Admin-Token", "")
+        return qp_token == token or header_token == token
+
     def _send_file(self, path: Path, content_type: str):
         if not path.exists():
             self.send_error(404, "File not found")
@@ -523,6 +537,18 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         else:
             path = self.path
             query_params = {}
+
+        # Admin page gate (token required)
+        if path in ("/admin", "/admin.html"):
+            if not self._admin_authorized(query_params):
+                self.send_error(403, "Forbidden")
+                return
+            if path == "/admin":
+                token = (query_params.get("token") or [""])[0]
+                self.send_response(302)
+                self.send_header("Location", f"/admin.html?token={token}")
+                self.end_headers()
+                return
         
         # Status endpoint
         if path == "/api/status":
@@ -568,7 +594,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
 
         # Admin status endpoint
         if path == "/api/admin/status":
-            return self._write_json({"ok": self._admin_enabled()}, status=200)
+            return self._write_json({"ok": self._admin_authorized(query_params)}, status=200)
 
         # Metrics endpoint
         if path == "/api/metrics":
@@ -613,8 +639,8 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 return self._write_json({"ok": False, "error": f"Analysis export error: {error_msg}"}, status=500)
 
         if path == "/api/admin/report":
-            if not self._admin_enabled():
-                return self._write_json({"ok": False, "error": "admin disabled"}, status=403)
+            if not self._admin_authorized(query_params):
+                return self._write_json({"ok": False, "error": "admin unauthorized"}, status=403)
             fmt = (query_params.get("format") or ["pdf"])[0].lower()
             symbol = (query_params.get("symbol") or [""])[0]
             start = (query_params.get("start") or [""])[0]

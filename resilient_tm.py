@@ -517,6 +517,109 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 print(traceback.format_exc())
                 return self._write_json({"ok": False, "error": f"Analysis export error: {error_msg}"}, status=500)
 
+        if path == "/api/orders/history":
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "order history not available in this mode"}, status=400)
+            try:
+                if not self.bybit_key or not self.bybit_secret:
+                    return self._write_json({"ok": False, "error": "API credentials not set"}, status=400)
+                if not self.bybit_client:
+                    self.bybit_client = BybitAPIClient(
+                        self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                    )
+                symbol_list = query_params.get("symbol", [None])
+                symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
+                start_ms, end_ms = self._parse_date_range(query_params)
+                days_list = query_params.get("days", ["30"])
+                days_val = days_list[0] if isinstance(days_list, list) and len(days_list) > 0 else (days_list if isinstance(days_list, str) else "30")
+                days = int(days_val) if days_val else 30
+                limit_list = query_params.get("limit", [None])
+                limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else None)
+                if limit_val not in (None, ""):
+                    limit = int(limit_val)
+                else:
+                    limit = 20000
+                if end_ms is None:
+                    end_ms = int(time.time() * 1000)
+                if start_ms is None:
+                    start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                orders = _fetch_order_history(limit, start_ms, end_ms, symbol)
+                return self._write_json({"ok": True, "orders": orders}, status=200)
+            except Exception as e:
+                import traceback
+                error_msg = str(e)
+                print(f"⚠️  Error in /api/orders/history: {error_msg}")
+                print(traceback.format_exc())
+                return self._write_json({"ok": False, "error": f"Order history error: {error_msg}"}, status=500)
+
+        if path == "/api/analysis/compare":
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
+            try:
+                if not self.bybit_key or not self.bybit_secret:
+                    return self._write_json({"ok": False, "error": "API credentials not set"}, status=400)
+                if not self.bybit_client:
+                    self.bybit_client = BybitAPIClient(
+                        self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                    )
+                symbol_list = query_params.get("symbol", [None])
+                symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
+                start_ms, end_ms = self._parse_date_range(query_params)
+                days_list = query_params.get("days", ["30"])
+                days_val = days_list[0] if isinstance(days_list, list) and len(days_list) > 0 else (days_list if isinstance(days_list, str) else "30")
+                days = int(days_val) if days_val else 30
+                limit_list = query_params.get("limit", [None])
+                limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else None)
+                if limit_val not in (None, ""):
+                    limit = int(limit_val)
+                else:
+                    limit = 20000
+                if end_ms is None:
+                    end_ms = int(time.time() * 1000)
+                if start_ms is None:
+                    start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+
+                t0 = time.time()
+                fills = _fetch_rest_fills(limit, start_ms, end_ms, symbol)
+                t1 = time.time()
+                orders = _fetch_order_history(limit, start_ms, end_ms, symbol)
+                t2 = time.time()
+
+                def _non_empty_fields(rows: list[dict], keys: list[str]) -> int:
+                    count = 0
+                    for k in keys:
+                        if any((r.get(k) not in (None, "", 0, 0.0)) for r in rows):
+                            count += 1
+                    return count
+
+                fill_symbols = sorted({(f.get("symbol") or "") for f in fills if f.get("symbol")})
+                order_symbols = sorted({(o.get("symbol") or "") for o in orders if o.get("symbol")})
+                filled_orders = [o for o in orders if float(o.get("cumExecQty") or 0) > 0]
+
+                payload = {
+                    "ok": True,
+                    "fills": {
+                        "rows": len(fills),
+                        "symbols": fill_symbols,
+                        "fields_present": _non_empty_fields(fills, ["exec_pnl", "fee", "is_maker", "price", "qty", "symbol", "side"]),
+                        "ms": int((t1 - t0) * 1000),
+                    },
+                    "orders": {
+                        "rows": len(orders),
+                        "filled_rows": len(filled_orders),
+                        "symbols": order_symbols,
+                        "fields_present": _non_empty_fields(orders, ["orderType", "orderStatus", "timeInForce", "avgPrice", "price", "cumExecQty", "symbol", "side"]),
+                        "ms": int((t2 - t1) * 1000),
+                    },
+                }
+                return self._write_json(payload, status=200)
+            except Exception as e:
+                import traceback
+                error_msg = str(e)
+                print(f"⚠️  Error in /api/analysis/compare: {error_msg}")
+                print(traceback.format_exc())
+                return self._write_json({"ok": False, "error": f"Compare error: {error_msg}"}, status=500)
+
         if path == "/api/analysis":
             if self.mode not in ("sync", "realtime", "file"):
                 return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
@@ -1222,6 +1325,30 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 cursor: str | None = None
                 while len(results) < limit:
                     batch, cursor = self.bybit_client.fetch_closed_pnl_page(
+                        limit=page_limit,
+                        symbol=symbol_filter,
+                        start_time=window_start,
+                        end_time=window_end,
+                        cursor=cursor
+                    )
+                    if not batch:
+                        break
+                    results.extend(batch)
+                    if not cursor:
+                        break
+                window_start = window_end + 1
+            return results[:limit]
+
+        def _fetch_order_history(limit: int, start_time: int, end_time: int, symbol_filter: str | None) -> list[dict]:
+            results: list[dict] = []
+            page_limit = min(200, max(1, limit))
+            max_range_ms = 7 * 24 * 60 * 60 * 1000
+            window_start = start_time
+            while len(results) < limit and window_start <= end_time:
+                window_end = min(end_time, window_start + max_range_ms - 1)
+                cursor: str | None = None
+                while len(results) < limit:
+                    batch, cursor = self.bybit_client.fetch_order_history_page(
                         limit=page_limit,
                         symbol=symbol_filter,
                         start_time=window_start,

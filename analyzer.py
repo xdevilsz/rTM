@@ -50,6 +50,17 @@ class TradeAnalyzer:
             return df
             
         df = df.sort_values("timestamp")
+        side_series = df["side"].astype(str)
+        df["side_norm"] = np.where(
+            side_series.str.contains("Buy|buy", case=False, na=False),
+            "buy",
+            np.where(side_series.str.contains("Sell|sell", case=False, na=False), "sell", "")
+        )
+        df["signed_qty"] = np.where(
+            df["side_norm"] == "buy",
+            df["qty"],
+            np.where(df["side_norm"] == "sell", -df["qty"], 0)
+        )
         df["cumulative_pnl"] = df["exec_pnl"].cumsum()
         df["cumulative_fee"] = df["fee"].cumsum()
         df["net_pnl"] = df["exec_pnl"] - df["fee"]
@@ -94,6 +105,12 @@ class TradeAnalyzer:
             "trade_frequency_per_hour": trade_frequency,
             "avg_buy_price": float(buy_trades["price"].mean()) if len(buy_trades) > 0 else None,
             "avg_sell_price": float(sell_trades["price"].mean()) if len(sell_trades) > 0 else None,
+            "avg_buy_qty": float(buy_trades["qty"].mean()) if len(buy_trades) > 0 else None,
+            "avg_sell_qty": float(sell_trades["qty"].mean()) if len(sell_trades) > 0 else None,
+            "avg_buy_notional": float(buy_trades["notional"].mean()) if len(buy_trades) > 0 else None,
+            "avg_sell_notional": float(sell_trades["notional"].mean()) if len(sell_trades) > 0 else None,
+            "avg_buy_fee": float(buy_trades["fee"].mean()) if len(buy_trades) > 0 else None,
+            "avg_sell_fee": float(sell_trades["fee"].mean()) if len(sell_trades) > 0 else None,
             "symbols": list(self.df["symbol"].unique()),
         }
     
@@ -166,6 +183,10 @@ class TradeAnalyzer:
         hourly.columns = ["hour", "hourly_pnl", "trade_count", "avg_pnl", "hourly_fee", "hourly_volume", "hourly_qty"]
         hourly = hourly.sort_values("hour")
         hourly["cumulative_pnl"] = hourly["hourly_pnl"].cumsum()
+        hourly["cumulative_net_pnl"] = hourly["hourly_pnl"].cumsum()
+        hourly["delta_pnl"] = hourly["hourly_pnl"].diff().fillna(0)
+        hourly["delta_volume"] = hourly["hourly_volume"].diff().fillna(0)
+        hourly["delta_trades"] = hourly["trade_count"].diff().fillna(0)
         # Convert hour column to string for JSON serialization
         hourly["hour"] = hourly["hour"].astype(str)
         
@@ -187,6 +208,10 @@ class TradeAnalyzer:
         daily.columns = ["date", "daily_pnl", "trade_count", "avg_pnl", "daily_fee", "daily_volume", "daily_qty"]
         daily = daily.sort_values("date")
         daily["cumulative_pnl"] = daily["daily_pnl"].cumsum()
+        daily["cumulative_net_pnl"] = daily["daily_pnl"].cumsum()
+        daily["delta_pnl"] = daily["daily_pnl"].diff().fillna(0)
+        daily["delta_volume"] = daily["daily_volume"].diff().fillna(0)
+        daily["delta_trades"] = daily["trade_count"].diff().fillna(0)
         # Convert date column to string for JSON serialization
         daily["date"] = daily["date"].astype(str)
         
@@ -208,6 +233,99 @@ class TradeAnalyzer:
         symbol_stats = symbol_stats.sort_values("total_pnl", ascending=False)
         
         return symbol_stats
+
+    def calculate_hour_of_day_stats(self) -> pd.DataFrame:
+        """Aggregate stats by hour of day (0-23)"""
+        if self.df.empty:
+            return pd.DataFrame()
+        hod = self.df.copy()
+        hod["hour_of_day"] = hod["timestamp"].dt.hour
+        grouped = hod.groupby("hour_of_day").agg({
+            "net_pnl": ["sum", "count", "mean"],
+            "notional": "sum",
+            "qty": "sum",
+        }).reset_index()
+        grouped.columns = ["hour_of_day", "hour_pnl", "trade_count", "avg_pnl", "hour_volume", "hour_qty"]
+        grouped = grouped.sort_values("hour_of_day")
+        return grouped
+
+    def calculate_symbol_hourly_stats(self) -> pd.DataFrame:
+        """Average buy/sell per hour for each symbol"""
+        if self.df.empty:
+            return pd.DataFrame()
+        df = self.df.copy()
+        df["hour_of_day"] = df["timestamp"].dt.hour
+        buy_df = df[df["side_norm"] == "buy"]
+        sell_df = df[df["side_norm"] == "sell"]
+
+        buy = buy_df.groupby(["symbol", "hour_of_day"]).agg(
+            buy_count=("qty", "count"),
+            buy_qty=("qty", "sum"),
+            buy_notional=("notional", "sum"),
+            avg_buy_qty=("qty", "mean"),
+            avg_buy_notional=("notional", "mean"),
+        ).reset_index()
+
+        sell = sell_df.groupby(["symbol", "hour_of_day"]).agg(
+            sell_count=("qty", "count"),
+            sell_qty=("qty", "sum"),
+            sell_notional=("notional", "sum"),
+            avg_sell_qty=("qty", "mean"),
+            avg_sell_notional=("notional", "mean"),
+        ).reset_index()
+
+        merged = pd.merge(buy, sell, on=["symbol", "hour_of_day"], how="outer").fillna(0)
+        merged = merged.sort_values(["symbol", "hour_of_day"])
+        return merged
+
+    def calculate_inventory_stats(self) -> Dict[str, pd.DataFrame]:
+        """Inventory build/deficit by hour, day, week"""
+        if self.df.empty:
+            return {"hourly": pd.DataFrame(), "daily": pd.DataFrame(), "weekly": pd.DataFrame()}
+        df = self.df.copy()
+        df["hour"] = df["timestamp"].dt.floor("h")
+        df["date"] = df["timestamp"].dt.date
+        df["week"] = df["timestamp"].dt.to_period("W").apply(lambda p: p.start_time.date())
+
+        hourly = df.groupby("hour").agg(
+            net_qty=("signed_qty", "sum"),
+            trade_count=("signed_qty", "count")
+        ).reset_index().sort_values("hour")
+        hourly["cumulative_net_qty"] = hourly["net_qty"].cumsum()
+        hourly["hour"] = hourly["hour"].astype(str)
+
+        daily = df.groupby("date").agg(
+            net_qty=("signed_qty", "sum"),
+            trade_count=("signed_qty", "count")
+        ).reset_index().sort_values("date")
+        daily["cumulative_net_qty"] = daily["net_qty"].cumsum()
+        daily["date"] = daily["date"].astype(str)
+
+        weekly = df.groupby("week").agg(
+            net_qty=("signed_qty", "sum"),
+            trade_count=("signed_qty", "count")
+        ).reset_index().sort_values("week")
+        weekly["cumulative_net_qty"] = weekly["net_qty"].cumsum()
+        weekly["week"] = weekly["week"].astype(str)
+
+        return {"hourly": hourly, "daily": daily, "weekly": weekly}
+
+    def calculate_time_correlations(self) -> Dict[str, Any]:
+        """Correlation between trading time and PnL"""
+        if self.df.empty:
+            return {}
+        hod = self.calculate_hour_of_day_stats()
+        if hod.empty:
+            return {}
+        def _corr(a, b) -> float:
+            if len(a) < 2 or np.std(a) == 0 or np.std(b) == 0:
+                return 0.0
+            return float(np.corrcoef(a, b)[0, 1])
+        return {
+            "corr_hour_of_day_pnl": _corr(hod["hour_of_day"].values, hod["hour_pnl"].values),
+            "corr_tradecount_pnl": _corr(hod["trade_count"].values, hod["hour_pnl"].values),
+            "corr_volume_pnl": _corr(hod["hour_volume"].values, hod["hour_pnl"].values),
+        }
     
     def calculate_risk_metrics(self, confidence_level: float = 0.05) -> Dict[str, Any]:
         """Calculate risk metrics including VaR and CVaR"""
@@ -306,6 +424,7 @@ class TradeAnalyzer:
     
     def get_comprehensive_analysis(self) -> Dict[str, Any]:
         """Get all analysis results in one dictionary"""
+        inventory = self.calculate_inventory_stats()
         return {
             "basic": self.get_basic_statistics(),
             "performance": self.calculate_performance_metrics(),
@@ -315,4 +434,10 @@ class TradeAnalyzer:
             "hourly_stats": self.calculate_hourly_stats().to_dict("records") if not self.df.empty else [],
             "daily_stats": self.calculate_daily_stats().to_dict("records") if not self.df.empty else [],
             "symbol_stats": self.calculate_symbol_stats().to_dict("records") if not self.df.empty else [],
+            "hour_of_day_stats": self.calculate_hour_of_day_stats().to_dict("records") if not self.df.empty else [],
+            "symbol_hourly_stats": self.calculate_symbol_hourly_stats().to_dict("records") if not self.df.empty else [],
+            "inventory_hourly": inventory["hourly"].to_dict("records") if not inventory["hourly"].empty else [],
+            "inventory_daily": inventory["daily"].to_dict("records") if not inventory["daily"].empty else [],
+            "inventory_weekly": inventory["weekly"].to_dict("records") if not inventory["weekly"].empty else [],
+            "time_correlations": self.calculate_time_correlations(),
         }

@@ -145,6 +145,33 @@
       border-color: rgba(124, 196, 255, 0.6);
       box-shadow: 0 8px 18px rgba(61, 138, 255, 0.2);
     }
+    .analysis-summary {
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(135deg, rgba(24, 34, 48, 0.85), rgba(18, 28, 40, 0.92));
+      box-shadow: var(--shadow);
+    }
+    .analysis-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .analysis-summary h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+    .analysis-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text);
+    }
+    .analysis-list li {
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
     .tooltip-cell { position: relative; }
     .tooltip-cell:hover::after {
       content: attr(data-tooltip);
@@ -1006,10 +1033,14 @@
         button_logout: 'Log Out',
         all: 'ALL',
         analysis_heading_basic: 'Basic Statistics',
+        analysis_heading_summary: 'Summary',
+        analysis_heading_advice: 'Actionable Advice',
         analysis_heading_performance: 'Performance Metrics',
         analysis_heading_risk: 'Risk Metrics',
         analysis_heading_maker_taker: 'Maker vs Taker',
         analysis_heading_symbol_pnl: 'Symbol PnL',
+        analysis_summary_empty: 'Not enough data to summarize yet.',
+        analysis_advice_empty: 'No specific advice triggered by the current data.',
         analysis_label_total_trades: 'Total Trades',
         analysis_label_total_volume: 'Total Volume',
         analysis_label_net_pnl: 'Net PnL',
@@ -1218,10 +1249,14 @@
         button_logout: '退出登录',
         all: '全部',
         analysis_heading_basic: '基础统计',
+        analysis_heading_summary: '摘要',
+        analysis_heading_advice: '针对性建议',
         analysis_heading_performance: '绩效指标',
         analysis_heading_risk: '风险指标',
         analysis_heading_maker_taker: 'Maker vs Taker',
         analysis_heading_symbol_pnl: '按交易对盈亏',
+        analysis_summary_empty: '数据不足，暂无法生成摘要。',
+        analysis_advice_empty: '当前数据未触发具体建议。',
         analysis_label_total_trades: '总交易数',
         analysis_label_total_volume: '总成交量',
         analysis_label_net_pnl: '净盈亏',
@@ -1796,6 +1831,166 @@
       }
     }
 
+    function formatPct(value, digits = 1) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return '-';
+      return `${(num * 100).toFixed(digits)}%`;
+    }
+
+    function formatSigned(value, digits = 4) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return '-';
+      const sign = num > 0 ? '+' : '';
+      return `${sign}${num.toFixed(digits)}`;
+    }
+
+    function getHourLabel(hourStr) {
+      if (!hourStr || typeof hourStr !== 'string') return '';
+      const parts = hourStr.split(' ');
+      if (parts.length < 2) return '';
+      const hour = parts[1].split(':')[0];
+      if (!hour) return '';
+      return `${hour}:00`;
+    }
+
+    function buildAnalysisInsights(data) {
+      const zh = currentLang === 'zh';
+      const summary = [];
+      const advice = [];
+      const basic = data.basic || {};
+      const perf = data.performance || {};
+      const mt = data.maker_taker || {};
+      const hourly = Array.isArray(data.hourly_stats) ? data.hourly_stats : [];
+      const daily = Array.isArray(data.daily_stats) ? data.daily_stats : [];
+      const symbols = Array.isArray(data.symbol_stats) ? data.symbol_stats : [];
+
+      if (basic.total_trades) {
+        const days = daily.length || 0;
+        if (days > 0) {
+          summary.push(zh ? `覆盖 ${days} 天 / ${basic.total_trades} 笔交易` : `Coverage: ${days} days / ${basic.total_trades} trades`);
+        } else {
+          summary.push(zh ? `交易数 ${basic.total_trades} 笔` : `Trades: ${basic.total_trades}`);
+        }
+      }
+
+      if (basic.total_volume) {
+        summary.push(zh ? `总成交量 ${basic.total_volume.toFixed(2)}` : `Total volume ${basic.total_volume.toFixed(2)}`);
+      }
+
+      if (basic.total_fee && basic.total_volume) {
+        summary.push(zh ? `手续费占比 ${formatPct(basic.fee_rate, 2)}` : `Fee ratio ${formatPct(basic.fee_rate, 2)}`);
+        if (basic.fee_rate > 0.0004) {
+          advice.push(zh
+            ? `手续费占比 ${formatPct(basic.fee_rate, 2)} 偏高，建议降低吃单比例或缩小高频交易时段。`
+            : `Fee ratio ${formatPct(basic.fee_rate, 2)} is high; reduce taker usage or narrow high-frequency windows.`);
+        }
+      }
+
+      if (symbols.length && basic.total_volume) {
+        const top = symbols.reduce((a, b) => (b.total_volume || 0) > (a.total_volume || 0) ? b : a, symbols[0]);
+        const share = (top.total_volume || 0) / (basic.total_volume || 1);
+        summary.push(zh
+          ? `交易量集中在 ${top.symbol || '-'}（${formatPct(share, 1)}）`
+          : `Volume concentrated in ${top.symbol || '-'} (${formatPct(share, 1)})`);
+        if (share >= 0.6) {
+          advice.push(zh
+            ? `${top.symbol || '该品种'} 占比 ${formatPct(share, 1)}，集中度偏高，建议把单品种占比压到 50% 以下。`
+            : `${top.symbol || 'Top symbol'} share is ${formatPct(share, 1)}; reduce single-symbol exposure below 50%.`);
+        }
+      }
+
+      if (hourly.length) {
+        const buckets = {};
+        for (const row of hourly) {
+          const label = getHourLabel(row.hour);
+          if (!label) continue;
+          if (!buckets[label]) {
+            buckets[label] = { pnl: 0, trades: 0 };
+          }
+          buckets[label].pnl += Number(row.hourly_pnl) || 0;
+          buckets[label].trades += Number(row.trade_count) || 0;
+        }
+        const minTrades = Math.max(3, Math.floor((basic.total_trades || 0) * 0.02));
+        const bucketList = Object.entries(buckets)
+          .map(([hour, v]) => ({
+            hour,
+            trades: v.trades,
+            avg_pnl: v.trades ? v.pnl / v.trades : 0
+          }))
+          .filter(b => b.trades >= minTrades);
+        if (bucketList.length >= 2) {
+          const best = bucketList.reduce((a, b) => (b.avg_pnl > a.avg_pnl ? b : a), bucketList[0]);
+          const worst = bucketList.reduce((a, b) => (b.avg_pnl < a.avg_pnl ? b : a), bucketList[0]);
+          summary.push(zh
+            ? `时段分布：UTC ${best.hour} 平均盈亏 ${formatSigned(best.avg_pnl)}；UTC ${worst.hour} 平均盈亏 ${formatSigned(worst.avg_pnl)}`
+            : `Time-of-day: UTC ${best.hour} avg ${formatSigned(best.avg_pnl)}; UTC ${worst.hour} avg ${formatSigned(worst.avg_pnl)}`);
+          if (best.avg_pnl > 0 && worst.avg_pnl < 0) {
+            advice.push(zh
+              ? `减少 UTC ${worst.hour} 附近交易，优先 UTC ${best.hour} 时段（样本≥${minTrades} 笔）。`
+              : `Reduce trading around UTC ${worst.hour}; prioritize UTC ${best.hour} (sample ≥ ${minTrades}).`);
+          }
+        }
+      }
+
+      if (mt.maker_count || mt.taker_count) {
+        if ((mt.taker_count || 0) > (mt.maker_count || 0) && (mt.taker_pnl || 0) < 0) {
+          advice.push(zh
+            ? `Taker 交易 ${mt.taker_count || 0} 笔且盈亏 ${formatSigned(mt.taker_pnl || 0)}，建议降低吃单占比。`
+            : `Taker trades ${mt.taker_count || 0} with PnL ${formatSigned(mt.taker_pnl || 0)}; reduce taker usage.`);
+        }
+        if ((mt.maker_count || 0) > 0 && (mt.maker_pnl || 0) < 0) {
+          advice.push(zh
+            ? `Maker 盈亏 ${formatSigned(mt.maker_pnl || 0)} 为负，检查挂单价格偏离或撤单过早。`
+            : `Maker PnL ${formatSigned(mt.maker_pnl || 0)} is negative; review maker pricing or early cancels.`);
+        }
+      }
+
+      if (perf.win_rate !== undefined && perf.profit_loss_ratio !== undefined) {
+        summary.push(zh
+          ? `胜率 ${formatPct(perf.win_rate, 1)}，盈亏比 ${Number(perf.profit_loss_ratio || 0).toFixed(2)}`
+          : `Win rate ${formatPct(perf.win_rate, 1)}, P/L ${Number(perf.profit_loss_ratio || 0).toFixed(2)}`);
+        if ((perf.win_rate || 0) < 0.45 && (perf.profit_loss_ratio || 0) < 1) {
+          advice.push(zh
+            ? `胜率 ${formatPct(perf.win_rate, 1)} 且盈亏比 ${Number(perf.profit_loss_ratio || 0).toFixed(2)}，建议先缩小开仓频率并优化止损/止盈比例。`
+            : `Win rate ${formatPct(perf.win_rate, 1)} and P/L ${Number(perf.profit_loss_ratio || 0).toFixed(2)}; reduce frequency and rebalance SL/TP.` );
+        }
+      }
+
+      if (perf.max_drawdown_pct !== undefined) {
+        const dd = Number(perf.max_drawdown_pct || 0);
+        if (dd < -10) {
+          advice.push(zh
+            ? `最大回撤 ${dd.toFixed(2)}%，建议限制单笔风险并回测触发点。`
+            : `Max drawdown ${dd.toFixed(2)}%; tighten per-trade risk and review triggers.`);
+        }
+      }
+
+      return { summary, advice };
+    }
+
+    function renderAnalysisSummary(insights) {
+      const summaryItems = insights.summary.length
+        ? insights.summary.map(item => `<li>${item}</li>`).join('')
+        : `<li class="muted">${t('analysis_summary_empty')}</li>`;
+      const adviceItems = insights.advice.length
+        ? insights.advice.map(item => `<li>${item}</li>`).join('')
+        : `<li class="muted">${t('analysis_advice_empty')}</li>`;
+      return `
+        <div class="analysis-summary">
+          <div class="analysis-summary-grid">
+            <div>
+              <h3>${t('analysis_heading_summary')}</h3>
+              <ul class="analysis-list">${summaryItems}</ul>
+            </div>
+            <div>
+              <h3>${t('analysis_heading_advice')}</h3>
+              <ul class="analysis-list">${adviceItems}</ul>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderAnalysis(data, mode) {
       const content = document.getElementById('analysis_content');
       let html = '';
@@ -1806,6 +2001,9 @@
         content.innerHTML = html;
         return;
       }
+
+      const insights = buildAnalysisInsights(data);
+      html += renderAnalysisSummary(insights);
 
       if (mode === 'full' || mode === 'performance') {
         const perf = data.performance || {};
@@ -2413,15 +2611,6 @@
       return num > 0 ? 'pnl-positive' : 'pnl-negative';
     }
 
-    function downloadJson(filename, payload) {
-      const text = JSON.stringify(payload, null, 2);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
-
     function getChartSymbol() {
       const dropdown = document.getElementById('chart_symbol');
       if (dropdown && dropdown.value) return dropdown.value;
@@ -2976,13 +3165,139 @@
     }
 
     function exportHistory() {
-      const payload = {
-        exchange: state.exchange || 'BYBIT',
-        product: state.product || 'unknown',
-        exported_at: new Date().toISOString(),
-        history: state.history
-      };
-      downloadJson('trade_history.json', payload);
+      exportHistoryBybitCsv();
+    }
+
+    function pad2(value) {
+      return String(value).padStart(2, '0');
+    }
+
+    function formatUtcTime(tsSeconds) {
+      if (!tsSeconds) return '';
+      const ms = tsSeconds > 1000000000000 ? tsSeconds : tsSeconds * 1000;
+      const d = new Date(ms);
+      if (Number.isNaN(d.getTime())) return '';
+      return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} ${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+    }
+
+    function csvEscape(value) {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (/[",\n]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    }
+
+    function downloadCsv(filename, rows, columns) {
+      const header = columns.map(col => csvEscape(col.label)).join(',');
+      const lines = [header];
+      for (const row of rows) {
+        const line = columns.map(col => csvEscape(row[col.key] ?? '')).join(',');
+        lines.push(line);
+      }
+      const text = lines.join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function buildBybitOrderHistoryRows(fills) {
+      const orders = new Map();
+      for (const fill of fills || []) {
+        if (!fill || !fill.order_id) continue;
+        const symbol = fill.symbol || '';
+        const side = fill.side || '';
+        const key = `${fill.order_id}|${symbol}|${side}`;
+        const qty = Number(fill.qty) || 0;
+        const price = Number(fill.price) || 0;
+        const fee = Number(fill.fee) || 0;
+        const feeCcy = fill.fee_ccy || '';
+        let entry = orders.get(key);
+        if (!entry) {
+          entry = {
+            order_id: fill.order_id,
+            symbol,
+            side,
+            qty: 0,
+            notional: 0,
+            min_ts: fill.ts || 0,
+            max_ts: fill.ts || 0,
+            fee_by_ccy: {}
+          };
+          orders.set(key, entry);
+        }
+        entry.qty += qty;
+        entry.notional += qty * price;
+        entry.min_ts = Math.min(entry.min_ts || fill.ts || 0, fill.ts || 0);
+        entry.max_ts = Math.max(entry.max_ts || fill.ts || 0, fill.ts || 0);
+        if (feeCcy) {
+          entry.fee_by_ccy[feeCcy] = (entry.fee_by_ccy[feeCcy] || 0) + fee;
+        }
+      }
+
+      const rows = [];
+      for (const entry of orders.values()) {
+        const filledPrice = entry.qty ? entry.notional / entry.qty : '';
+        const feeInfo = Object.keys(entry.fee_by_ccy).length ? JSON.stringify(entry.fee_by_ccy) : '';
+        const suffix = entry.order_id.slice(-8);
+        rows.push({
+          market: entry.symbol,
+          order_qty: entry.qty || '',
+          order_price: filledPrice || '',
+          filled_price: filledPrice || '',
+          trigger_price: '',
+          filled_qty: entry.qty || '',
+          fee_info: feeInfo,
+          direction: entry.side === 'Buy' ? 'Long' : entry.side === 'Sell' ? 'Short' : entry.side,
+          order_type: '',
+          order_status: entry.qty ? 'Filled' : '',
+          order_id: suffix,
+          order_time: formatUtcTime(entry.min_ts),
+          tif: '',
+          create_time: formatUtcTime(entry.min_ts),
+          max_slippage: '',
+          max_slippage_type: '',
+          limit_tpsl_strategy: '',
+          bbo_side_type: '',
+          bbo_level: ''
+        });
+      }
+
+      rows.sort((a, b) => (b.order_time || '').localeCompare(a.order_time || ''));
+      return rows;
+    }
+
+    function getBybitOrderHistoryColumns() {
+      return [
+        { key: 'market', label: 'Market' },
+        { key: 'order_qty', label: 'Order Quantity' },
+        { key: 'order_price', label: 'Order Price' },
+        { key: 'filled_price', label: 'Filled Price' },
+        { key: 'trigger_price', label: 'Trigger Price' },
+        { key: 'filled_qty', label: 'Filled Quantity' },
+        { key: 'fee_info', label: 'feeInfo' },
+        { key: 'direction', label: 'Direction' },
+        { key: 'order_type', label: 'Order Type' },
+        { key: 'order_status', label: 'Order Status' },
+        { key: 'order_id', label: 'Order ID' },
+        { key: 'order_time', label: 'Order Time(UTC+0)' },
+        { key: 'tif', label: 'Time In Force' },
+        { key: 'create_time', label: 'Create Time' },
+        { key: 'max_slippage', label: 'Max Slippage' },
+        { key: 'max_slippage_type', label: 'Max Slippage Type' },
+        { key: 'limit_tpsl_strategy', label: 'Limit Tpsl Strategy' },
+        { key: 'bbo_side_type', label: 'Bbo Side Type' },
+        { key: 'bbo_level', label: 'Bbo Level' }
+      ];
+    }
+
+    function exportHistoryBybitCsv() {
+      const columns = getBybitOrderHistoryColumns();
+      const rows = buildBybitOrderHistoryRows(state.history || []);
+      downloadCsv('trade_history_bybit.csv', rows, columns);
     }
 
     function clearHistory() {
@@ -2997,7 +3312,7 @@
     }
 
     loadHistory();
-    setLanguage('en');
+    setLanguage('zh');
     updateChartHeight(460);
     updateChartOrderMode();
     updateSymbolOptions();
@@ -3122,9 +3437,11 @@
       const days = document.getElementById('analysis_timeframe').value;
       const symbol = getSelectedSymbol();
       const qs = new URLSearchParams({ days, symbol: symbol || '' });
-      fetch(`/api/analysis?${qs.toString()}`).then(r => r.json()).then(data => {
-        const filename = `analysis_${new Date().toISOString().split('T')[0]}.json`;
-        downloadJson(filename, data);
+      fetch(`/api/analysis/fills?${qs.toString()}`).then(r => r.json()).then(data => {
+        const fills = Array.isArray(data?.fills) ? data.fills : [];
+        const rows = buildBybitOrderHistoryRows(fills);
+        const columns = getBybitOrderHistoryColumns();
+        downloadCsv('analysis_bybit.csv', rows, columns);
       }).catch(e => alert(t('alert_export_error')));
     });
     renderHistory();

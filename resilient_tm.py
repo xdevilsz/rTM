@@ -499,6 +499,21 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             return self._write_json(metrics, status=200)
 
         # Analysis endpoint (for sync and realtime modes)
+        if path == "/api/analysis/fills":
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
+            try:
+                fills, error = self._get_analysis_fills(query_params)
+                if error:
+                    return self._write_json({"ok": False, "error": error, "fills": []}, status=502)
+                return self._write_json({"ok": True, "fills": fills}, status=200)
+            except Exception as e:
+                import traceback
+                error_msg = str(e)
+                print(f"⚠️  Error in /api/analysis/fills: {error_msg}")
+                print(traceback.format_exc())
+                return self._write_json({"ok": False, "error": f"Analysis export error: {error_msg}"}, status=500)
+
         if path == "/api/analysis":
             if self.mode not in ("sync", "realtime", "file"):
                 return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
@@ -1104,15 +1119,13 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         metrics["last_update"] = last_update
         
         return metrics
-    
-    def _get_analysis(self, query_params: dict) -> dict | None:
-        """Get comprehensive analysis for sync/realtime/file modes"""
-        fills = []
-        # Defaults so realtime mode never references undefined variables
+
+    def _get_analysis_fills(self, query_params: dict) -> tuple[list[dict], str | None]:
+        fills: list[dict] = []
         days = 30
         symbol_list = query_params.get("symbol", [None])
         symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
-        
+
         try:
             if self.mode == "realtime":
                 days_list = query_params.get("days", ["30"])
@@ -1163,31 +1176,21 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                             break
                     fills = fills[:limit]
                     if not fills and self.bybit_client and self.bybit_client.last_error:
-                        return {
-                            "basic": {"total_trades": 0, "message": self.bybit_client.last_error},
-                            "performance": {},
-                            "risk": {},
-                            "maker_taker": {},
-                            "consistency": {"score": 0, "message": "API error while fetching trades"},
-                            "hourly_stats": [],
-                            "daily_stats": [],
-                            "symbol_stats": [],
-                        }
+                        return [], self.bybit_client.last_error
 
             elif self.mode == "sync":
                 if not self.bybit_client:
                     self.bybit_client = BybitAPIClient(
                         self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
                     )
-                # Safely parse query parameters with defaults
                 limit_list = query_params.get("limit", ["1000"])
                 limit_val = limit_list[0] if isinstance(limit_list, list) and len(limit_list) > 0 else (limit_list if isinstance(limit_list, str) else "1000")
                 limit = int(limit_val) if limit_val else 1000
-                
+
                 days_list = query_params.get("days", ["30"])
                 days_val = days_list[0] if isinstance(days_list, list) and len(days_list) > 0 else (days_list if isinstance(days_list, str) else "30")
                 days = int(days_val) if days_val else 30
-                
+
                 symbol_list = query_params.get("symbol", [None])
                 symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
 
@@ -1230,30 +1233,34 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                     fills = [f for f in fills if _normalize_ts(f.get("ts") or f.get("timestamp")) >= cutoff]
                 if symbol:
                     fills = [f for f in fills if f.get("symbol") == symbol]
-
             else:
-                # File/bybit_api modes don't support analysis
                 fills = []
-        
+
         except Exception as e:
             import traceback
             print(f"⚠️  Error fetching fills for analysis: {e}")
             print(traceback.format_exc())
-            # Return empty analysis structure on error
+            return [], f"Error fetching data: {str(e)}"
+
+        trade_fills = [f for f in fills if not f.get("exec_type") or f.get("exec_type") == "trade"]
+        return trade_fills, None
+
+    def _get_analysis(self, query_params: dict) -> dict | None:
+        """Get comprehensive analysis for sync/realtime/file modes"""
+        trade_fills, error = self._get_analysis_fills(query_params)
+        if error:
             return {
-                "basic": {"total_trades": 0, "message": f"Error fetching data: {str(e)}"},
+                "basic": {"total_trades": 0, "message": error},
                 "performance": {},
                 "risk": {},
                 "maker_taker": {},
-                "consistency": {"score": 0, "message": "Error occurred"},
+                "consistency": {"score": 0, "message": "API error while fetching trades"},
                 "hourly_stats": [],
                 "daily_stats": [],
                 "symbol_stats": [],
             }
-        
-        trade_fills = [f for f in fills if not f.get("exec_type") or f.get("exec_type") == "trade"]
+
         if not trade_fills:
-            # Return empty analysis structure instead of None
             return {
                 "basic": {"total_trades": 0, "message": "No trade data available yet. Waiting for trades..."},
                 "performance": {},
@@ -1264,7 +1271,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 "daily_stats": [],
                 "symbol_stats": [],
             }
-        
+
         try:
             normalized_fills = []
             for f in trade_fills:
@@ -1276,16 +1283,14 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 normalized_fills.append(copy)
             analyzer = TradeAnalyzer(normalized_fills)
             analysis = analyzer.get_comprehensive_analysis()
-            # Convert pandas Timestamps and other non-serializable objects to strings
             analysis = self._serialize_analysis(analysis)
             return analysis
         except Exception as e:
             import traceback
             print(f"⚠️  Error analyzing trades: {e}")
             print(traceback.format_exc())
-            # Return partial analysis on error
             return {
-                "basic": {"total_trades": len(fills), "message": f"Analysis error: {str(e)}"},
+                "basic": {"total_trades": len(trade_fills), "message": f"Analysis error: {str(e)}"},
                 "performance": {},
                 "risk": {},
                 "maker_taker": {},
@@ -1757,9 +1762,24 @@ if __name__ == "__main__":
             return self._write_json(metrics, status=200)
 
         # Analysis endpoint (for sync and realtime modes)
+        if path == "/api/analysis/fills":
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
+            try:
+                fills, error = self._get_analysis_fills(query_params)
+                if error:
+                    return self._write_json({"ok": False, "error": error, "fills": []}, status=502)
+                return self._write_json({"ok": True, "fills": fills}, status=200)
+            except Exception as e:
+                import traceback
+                error_msg = str(e)
+                print(f"⚠️  Error in /api/analysis/fills: {error_msg}")
+                print(traceback.format_exc())
+                return self._write_json({"ok": False, "error": f"Analysis export error: {error_msg}"}, status=500)
+
         if path == "/api/analysis":
-            if self.mode not in ("sync", "realtime"):
-                return self._write_json({"ok": False, "error": "analysis only available in sync/realtime modes"}, status=400)
+            if self.mode not in ("sync", "realtime", "file"):
+                return self._write_json({"ok": False, "error": "analysis not available in this mode"}, status=400)
             
             try:
                 analysis = self._get_analysis(query_params)

@@ -9,7 +9,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler
 try:
     # Python 3.7+: handles concurrent requests (critical when /api/analysis is slow)
@@ -1120,11 +1120,34 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         
         return metrics
 
+    def _parse_date_range(self, query_params: dict) -> tuple[int | None, int | None]:
+        start_list = query_params.get("start", [""])
+        end_list = query_params.get("end", [""])
+        start_str = start_list[0] if isinstance(start_list, list) and start_list else (start_list or "")
+        end_str = end_list[0] if isinstance(end_list, list) and end_list else (end_list or "")
+        if not start_str and not end_str:
+            return None, None
+        start_ms = None
+        end_ms = None
+        try:
+            if start_str:
+                start_dt = datetime.strptime(start_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                start_ms = int(start_dt.timestamp() * 1000)
+            if end_str:
+                end_dt = datetime.strptime(end_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                end_dt = end_dt + timedelta(days=1) - timedelta(milliseconds=1)
+                end_ms = int(end_dt.timestamp() * 1000)
+        except Exception:
+            return None, None
+        return start_ms, end_ms
+
     def _get_analysis_fills(self, query_params: dict) -> tuple[list[dict], str | None]:
         fills: list[dict] = []
         days = 30
         symbol_list = query_params.get("symbol", [None])
         symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
+        start_ms, end_ms = self._parse_date_range(query_params)
+        has_range = start_ms is not None or end_ms is not None
 
         try:
             if self.mode == "realtime":
@@ -1138,7 +1161,16 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 with _realtime_lock:
                     fills = list(_realtime_data["fills"])
 
-                if days > 0:
+                if has_range:
+                    if end_ms is None:
+                        end_ms = int(time.time() * 1000)
+                    if start_ms is None:
+                        start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                    start_sec = start_ms / 1000 if start_ms else None
+                    end_sec = end_ms / 1000 if end_ms else None
+                    fills = [f for f in fills if (start_sec is None or _normalize_ts(f.get("ts")) >= start_sec)
+                             and (end_sec is None or _normalize_ts(f.get("ts")) <= end_sec)]
+                elif days > 0:
                     cutoff = time.time() - (days * 24 * 60 * 60)
                     fills = [f for f in fills if _normalize_ts(f.get("ts")) >= cutoff]
                 if symbol:
@@ -1149,8 +1181,12 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                         self.bybit_client = BybitAPIClient(
                             self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
                         )
-                    end_time = int(time.time() * 1000)
-                    start_time = end_time - (days * 24 * 60 * 60 * 1000)
+                    if end_ms is None:
+                        end_ms = int(time.time() * 1000)
+                    if start_ms is None:
+                        start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                    end_time = end_ms
+                    start_time = start_ms
                     current_end = end_time
                     max_per_request = 200
                     max_range_ms = 7 * 24 * 60 * 60 * 1000
@@ -1194,8 +1230,12 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 symbol_list = query_params.get("symbol", [None])
                 symbol = symbol_list[0] if isinstance(symbol_list, list) and len(symbol_list) > 0 else (symbol_list if isinstance(symbol_list, str) else None)
 
-                end_time = int(time.time() * 1000)
-                start_time = end_time - (days * 24 * 60 * 60 * 1000)
+                if end_ms is None:
+                    end_ms = int(time.time() * 1000)
+                if start_ms is None:
+                    start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                end_time = end_ms
+                start_time = start_ms
 
                 current_end = end_time
                 max_per_request = 200
@@ -1228,7 +1268,16 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 metrics = _read_json(metrics_path) or {}
                 fills = metrics.get("fills") or []
 
-                if days > 0:
+                if has_range:
+                    if end_ms is None:
+                        end_ms = int(time.time() * 1000)
+                    if start_ms is None:
+                        start_ms = end_ms - (days * 24 * 60 * 60 * 1000)
+                    start_sec = start_ms / 1000 if start_ms else None
+                    end_sec = end_ms / 1000 if end_ms else None
+                    fills = [f for f in fills if (start_sec is None or _normalize_ts(f.get("ts") or f.get("timestamp")) >= start_sec)
+                             and (end_sec is None or _normalize_ts(f.get("ts") or f.get("timestamp")) <= end_sec)]
+                elif days > 0:
                     cutoff = time.time() - (days * 24 * 60 * 60)
                     fills = [f for f in fills if _normalize_ts(f.get("ts") or f.get("timestamp")) >= cutoff]
                 if symbol:

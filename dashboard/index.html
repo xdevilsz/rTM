@@ -489,6 +489,12 @@
           <option value="Sell" data-i18n="side_sell">Sell</option>
         </select>
       </label>
+      <label><span data-i18n="label_start_date">Start</span>
+        <input id="filter_start" type="date">
+      </label>
+      <label><span data-i18n="label_end_date">End</span>
+        <input id="filter_end" type="date">
+      </label>
       <label><span data-i18n="label_min_qty">Min Qty</span>
         <input id="filter_min_qty" type="number" step="0.0001" value="0">
       </label>
@@ -559,6 +565,12 @@
           <option value="180" data-i18n="tf_180d">180 Days</option>
           <option value="365" data-i18n="tf_365d">365 Days</option>
         </select>
+      </label>
+      <label><span data-i18n="label_start_date">Start</span>
+        <input id="analysis_start" type="date">
+      </label>
+      <label><span data-i18n="label_end_date">End</span>
+        <input id="analysis_end" type="date">
       </label>
       <button id="refresh_analysis" data-i18n="button_refresh_analysis">Refresh Analysis</button>
       <button id="export_analysis" data-i18n="button_export_analysis">Export Analysis</button>
@@ -857,7 +869,6 @@
       exchange: null,
       metrics: null,
       metricsSymbols: [],
-      selectedSymbol: '',
       tradingEnabled: false,
       tradingMode: '',
       tradingHasEnv: false,
@@ -948,6 +959,8 @@
         side_sell: 'Sell',
         label_min_qty: 'Min Qty',
         label_max_rows: 'Max Rows',
+        label_start_date: 'Start',
+        label_end_date: 'End',
         button_apply: 'Apply',
         button_export_history: 'Export History',
         button_clear_log: 'Clear Local Log',
@@ -1164,6 +1177,8 @@
         side_sell: '卖',
         label_min_qty: '最小数量',
         label_max_rows: '最大行数',
+        label_start_date: '开始日期',
+        label_end_date: '结束日期',
         button_apply: '应用',
         button_export_history: '导出历史',
         button_clear_log: '清除本地记录',
@@ -1599,18 +1614,64 @@
       };
     }
 
+    function getDateRangeFromInputs(startId, endId) {
+      const startVal = document.getElementById(startId)?.value || '';
+      const endVal = document.getElementById(endId)?.value || '';
+      let startTs = null;
+      let endTs = null;
+      if (startVal) {
+        const parsed = Date.parse(`${startVal}T00:00:00Z`);
+        if (!Number.isNaN(parsed)) startTs = parsed / 1000;
+      }
+      if (endVal) {
+        const parsed = Date.parse(`${endVal}T23:59:59Z`);
+        if (!Number.isNaN(parsed)) endTs = parsed / 1000;
+      }
+      return { startTs, endTs };
+    }
+
+    function filterFillsByDate(rows, startTs, endTs) {
+      if (!startTs && !endTs) return rows;
+      return rows.filter(r => {
+        const ts = Number(r.ts || 0);
+        if (startTs && ts < startTs) return false;
+        if (endTs && ts > endTs) return false;
+        return true;
+      });
+    }
+
+    function getHistoryFilters() {
+      const symbol = getHistorySymbol();
+      const side = document.getElementById('filter_side').value;
+      const minQty = parseFloat(document.getElementById('filter_min_qty').value || '0');
+      const { startTs, endTs } = getDateRangeFromInputs('filter_start', 'filter_end');
+      return { symbol, side, minQty, startTs, endTs };
+    }
+
+    function applyHistoryFilters(rows, filters) {
+      let output = rows;
+      if (filters.symbol) output = output.filter(r => r.symbol === filters.symbol);
+      if (filters.side) output = output.filter(r => r.side === filters.side);
+      if (!Number.isNaN(filters.minQty) && filters.minQty > 0) {
+        output = output.filter(r => Number(r.qty || 0) >= filters.minQty);
+      }
+      output = filterFillsByDate(output, filters.startTs, filters.endTs);
+      return output;
+    }
+
+    function getFilteredHistoryRows(limit) {
+      const filters = getHistoryFilters();
+      let rows = applyHistoryFilters(state.history.slice(), filters);
+      if (limit) rows = rows.slice(0, limit);
+      return rows;
+    }
+
     function renderHistory() {
       const body = document.getElementById('fills_body');
       body.innerHTML = '';
-      const symbol = getSelectedSymbol();
-      const side = document.getElementById('filter_side').value;
-      const minQty = parseFloat(document.getElementById('filter_min_qty').value || '0');
       const maxRows = parseInt(document.getElementById('filter_max_rows').value || '200', 10);
-      let rows = state.history.slice();
-      if (symbol) rows = rows.filter(r => r.symbol === symbol);
-      if (side) rows = rows.filter(r => r.side === side);
-      if (!isNaN(minQty) && minQty > 0) rows = rows.filter(r => Number(r.qty || 0) >= minQty);
-      rows = rows.slice(0, isNaN(maxRows) ? 200 : maxRows);
+      const limit = isNaN(maxRows) ? 200 : maxRows;
+      const rows = getFilteredHistoryRows(limit);
       for (const r of rows) {
         const t = r.ts ? new Date(r.ts * 1000).toLocaleTimeString() : '';
         const fee = r.fee !== '' ? `${r.fee} ${r.fee_ccy || ''}` : '';
@@ -1631,8 +1692,10 @@
     }
 
     function renderConsistency() {
-      const symbol = getSelectedSymbol();
-      const scoped = symbol ? state.history.filter(r => r.symbol === symbol) : state.history;
+      const symbol = getHistorySymbol();
+      const { startTs, endTs } = getDateRangeFromInputs('filter_start', 'filter_end');
+      let scoped = filterFillsByDate(state.history.slice(), startTs, endTs);
+      if (symbol) scoped = scoped.filter(r => r.symbol === symbol);
       const stats = computeConsistency(scoped);
       setText('consistency_score', stats.score ? `${stats.score}` : '-');
       const fill = document.getElementById('consistency_fill');
@@ -1657,29 +1720,12 @@
       setText('logged_trades', String(scoped.length));
     }
 
-    function getSelectedSymbol() {
-      return state.selectedSymbol || '';
+    function getHistorySymbol() {
+      return document.getElementById('filter_symbol')?.value || '';
     }
 
-    function setSelectedSymbol(value) {
-      state.selectedSymbol = value || '';
-      syncSymbolSelects();
-      renderHistory();
-      renderConsistency();
-      fetchAnalysis();
-    }
-
-    function syncSymbolSelects() {
-      const selects = [
-        document.getElementById('filter_symbol'),
-        document.getElementById('analysis_symbol')
-      ];
-      selects.forEach(sel => {
-        if (!sel) return;
-        if (sel.value !== state.selectedSymbol) {
-          sel.value = state.selectedSymbol;
-        }
-      });
+    function getAnalysisSymbol() {
+      return document.getElementById('analysis_symbol')?.value || '';
     }
 
     function updateSymbolOptions() {
@@ -1702,8 +1748,7 @@
         sel.innerHTML = `<option value="">${t('all')}</option>` + symbols.map(sym => `<option value="${sym}">${sym}</option>`).join('');
         if (current && symbols.includes(current)) {
           sel.value = current;
-        } else if (!symbols.includes(state.selectedSymbol)) {
-          state.selectedSymbol = '';
+        } else {
           sel.value = '';
         }
       });
@@ -1804,8 +1849,12 @@
       try {
         const mode = document.getElementById('analysis_mode').value;
         const days = document.getElementById('analysis_timeframe').value;
-        const symbol = getSelectedSymbol();
+        const symbol = getAnalysisSymbol();
         const qs = new URLSearchParams({ days, symbol: symbol || '' });
+        const startVal = document.getElementById('analysis_start')?.value || '';
+        const endVal = document.getElementById('analysis_end')?.value || '';
+        if (startVal) qs.set('start', startVal);
+        if (endVal) qs.set('end', endVal);
         const res = await fetch(`/api/analysis?${qs.toString()}`, { cache: 'no-store' });
         if (!res.ok) {
           let errorMsg = t('status_analysis_unavailable');
@@ -3296,7 +3345,7 @@
 
     function exportHistoryBybitCsv() {
       const columns = getBybitOrderHistoryColumns();
-      const rows = buildBybitOrderHistoryRows(state.history || []);
+      const rows = buildBybitOrderHistoryRows(getFilteredHistoryRows(null));
       downloadCsv('trade_history_bybit.csv', rows, columns);
     }
 
@@ -3305,7 +3354,6 @@
       state.history = [];
       state.historyIndex = new Set();
       saveHistory();
-      state.selectedSymbol = '';
       updateSymbolOptions();
       renderHistory();
       renderConsistency();
@@ -3317,7 +3365,10 @@
     updateChartOrderMode();
     updateSymbolOptions();
     applyTabs();
-    document.getElementById('apply_filters').addEventListener('click', renderHistory);
+    document.getElementById('apply_filters').addEventListener('click', () => {
+      renderHistory();
+      renderConsistency();
+    });
     document.getElementById('export_history').addEventListener('click', exportHistory);
     document.getElementById('clear_history').addEventListener('click', clearHistory);
     document.getElementById('refresh_analysis').addEventListener('click', fetchAnalysis);
@@ -3431,12 +3482,19 @@
       input.value = '';
       fetchKlines();
     });
-    on('filter_symbol', 'change', (e) => setSelectedSymbol(e.target.value));
-    on('analysis_symbol', 'change', (e) => setSelectedSymbol(e.target.value));
+    on('filter_symbol', 'change', () => {
+      renderHistory();
+      renderConsistency();
+    });
+    on('analysis_symbol', 'change', () => fetchAnalysis());
     on('export_analysis', 'click', () => {
       const days = document.getElementById('analysis_timeframe').value;
-      const symbol = getSelectedSymbol();
+      const symbol = getAnalysisSymbol();
       const qs = new URLSearchParams({ days, symbol: symbol || '' });
+      const startVal = document.getElementById('analysis_start')?.value || '';
+      const endVal = document.getElementById('analysis_end')?.value || '';
+      if (startVal) qs.set('start', startVal);
+      if (endVal) qs.set('end', endVal);
       fetch(`/api/analysis/fills?${qs.toString()}`).then(r => r.json()).then(data => {
         const fills = Array.isArray(data?.fills) ? data.fills : [];
         const rows = buildBybitOrderHistoryRows(fills);

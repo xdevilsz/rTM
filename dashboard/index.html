@@ -566,6 +566,10 @@
           <option value="365" data-i18n="tf_365d">365 Days</option>
         </select>
       </label>
+      <label>
+        <input id="analysis_use_range" type="checkbox">
+        <span data-i18n="label_use_date_range">Use Date Range</span>
+      </label>
       <label><span data-i18n="label_start_date">Start</span>
         <input id="analysis_start" type="date">
       </label>
@@ -961,6 +965,7 @@
         label_max_rows: 'Max Rows',
         label_start_date: 'Start',
         label_end_date: 'End',
+        label_use_date_range: 'Use Date Range',
         button_apply: 'Apply',
         button_export_history: 'Export History',
         button_clear_log: 'Clear Local Log',
@@ -1179,6 +1184,7 @@
         label_max_rows: '最大行数',
         label_start_date: '开始日期',
         label_end_date: '结束日期',
+        label_use_date_range: '使用日期范围',
         button_apply: '应用',
         button_export_history: '导出历史',
         button_clear_log: '清除本地记录',
@@ -1851,10 +1857,13 @@
         const days = document.getElementById('analysis_timeframe').value;
         const symbol = getAnalysisSymbol();
         const qs = new URLSearchParams({ days, symbol: symbol || '' });
-        const startVal = document.getElementById('analysis_start')?.value || '';
-        const endVal = document.getElementById('analysis_end')?.value || '';
-        if (startVal) qs.set('start', startVal);
-        if (endVal) qs.set('end', endVal);
+        if (isAnalysisDateRangeEnabled()) {
+          const startVal = document.getElementById('analysis_start')?.value || '';
+          const endVal = document.getElementById('analysis_end')?.value || '';
+          if (startVal) qs.set('start', startVal);
+          if (endVal) qs.set('end', endVal);
+          if (startVal || endVal) qs.set('source', 'rest');
+        }
         const res = await fetch(`/api/analysis?${qs.toString()}`, { cache: 'no-store' });
         if (!res.ok) {
           let errorMsg = t('status_analysis_unavailable');
@@ -2038,6 +2047,28 @@
           </div>
         </div>
       `;
+    }
+
+    function clearAnalysisDateFilters() {
+      const start = document.getElementById('analysis_start');
+      const end = document.getElementById('analysis_end');
+      if (start) start.value = '';
+      if (end) end.value = '';
+    }
+
+    function isAnalysisDateRangeEnabled() {
+      return !!document.getElementById('analysis_use_range')?.checked;
+    }
+
+    function syncAnalysisDateRangeUI() {
+      const enabled = isAnalysisDateRangeEnabled();
+      const start = document.getElementById('analysis_start');
+      const end = document.getElementById('analysis_end');
+      if (start) start.disabled = !enabled;
+      if (end) end.disabled = !enabled;
+      if (!enabled) {
+        clearAnalysisDateFilters();
+      }
     }
 
     function renderAnalysis(data, mode) {
@@ -3253,6 +3284,27 @@
       URL.revokeObjectURL(a.href);
     }
 
+    function formatDateStamp(value) {
+      if (!value) return '';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return '';
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}${m}${day}`;
+    }
+
+    function buildExportFilename(prefix, symbol, startDate, endDate, days) {
+      const symbolTag = symbol ? symbol : 'ALL';
+      const startTag = startDate ? formatDateStamp(`${startDate}T00:00:00Z`) : '';
+      const endTag = endDate ? formatDateStamp(`${endDate}T00:00:00Z`) : '';
+      if (startTag || endTag) {
+        const rangeTag = `${startTag || 'NA'}-${endTag || 'NA'}`;
+        return `${prefix}_${symbolTag}_${rangeTag}.csv`;
+      }
+      return `${prefix}_${symbolTag}_${days || 'range'}d.csv`;
+    }
+
     function buildBybitOrderHistoryRows(fills) {
       const orders = new Map();
       for (const fill of fills || []) {
@@ -3346,7 +3398,12 @@
     function exportHistoryBybitCsv() {
       const columns = getBybitOrderHistoryColumns();
       const rows = buildBybitOrderHistoryRows(getFilteredHistoryRows(null));
-      downloadCsv('trade_history_bybit.csv', rows, columns);
+      const symbol = getHistorySymbol();
+      const { startTs, endTs } = getDateRangeFromInputs('filter_start', 'filter_end');
+      const startDate = startTs ? new Date(startTs * 1000).toISOString().slice(0, 10) : '';
+      const endDate = endTs ? new Date(endTs * 1000).toISOString().slice(0, 10) : '';
+      const filename = buildExportFilename('trade_history_bybit', symbol, startDate, endDate, '');
+      downloadCsv(filename, rows, columns);
     }
 
     function clearHistory() {
@@ -3365,6 +3422,7 @@
     updateChartOrderMode();
     updateSymbolOptions();
     applyTabs();
+    syncAnalysisDateRangeUI();
     document.getElementById('apply_filters').addEventListener('click', () => {
       renderHistory();
       renderConsistency();
@@ -3487,19 +3545,41 @@
       renderConsistency();
     });
     on('analysis_symbol', 'change', () => fetchAnalysis());
+    on('analysis_timeframe', 'change', () => {
+      document.getElementById('analysis_use_range').checked = false;
+      syncAnalysisDateRangeUI();
+      fetchAnalysis();
+    });
+    on('analysis_use_range', 'change', () => {
+      syncAnalysisDateRangeUI();
+      fetchAnalysis();
+    });
+    on('analysis_start', 'change', () => {
+      if (isAnalysisDateRangeEnabled()) fetchAnalysis();
+    });
+    on('analysis_end', 'change', () => {
+      if (isAnalysisDateRangeEnabled()) fetchAnalysis();
+    });
     on('export_analysis', 'click', () => {
       const days = document.getElementById('analysis_timeframe').value;
       const symbol = getAnalysisSymbol();
       const qs = new URLSearchParams({ days, symbol: symbol || '' });
-      const startVal = document.getElementById('analysis_start')?.value || '';
-      const endVal = document.getElementById('analysis_end')?.value || '';
-      if (startVal) qs.set('start', startVal);
-      if (endVal) qs.set('end', endVal);
+      qs.set('source', 'rest');
+      qs.set('limit', '20000');
+      let startVal = '';
+      let endVal = '';
+      if (isAnalysisDateRangeEnabled()) {
+        startVal = document.getElementById('analysis_start')?.value || '';
+        endVal = document.getElementById('analysis_end')?.value || '';
+        if (startVal) qs.set('start', startVal);
+        if (endVal) qs.set('end', endVal);
+      }
       fetch(`/api/analysis/fills?${qs.toString()}`).then(r => r.json()).then(data => {
         const fills = Array.isArray(data?.fills) ? data.fills : [];
         const rows = buildBybitOrderHistoryRows(fills);
         const columns = getBybitOrderHistoryColumns();
-        downloadCsv('analysis_bybit.csv', rows, columns);
+        const filename = buildExportFilename('analysis_bybit', symbol, startVal, endVal, days);
+        downloadCsv(filename, rows, columns);
       }).catch(e => alert(t('alert_export_error')));
     });
     renderHistory();

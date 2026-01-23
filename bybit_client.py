@@ -210,6 +210,50 @@ class BybitAPIClient:
             })
 
         return fills, next_cursor
+
+    def fetch_closed_pnl_page(
+        self,
+        limit: int = 200,
+        symbol: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        cursor: Optional[str] = None
+    ) -> tuple[List[Dict], Optional[str]]:
+        """Fetch a single page of closed PnL and return (rows, next_cursor)."""
+        params = {
+            "category": self.category,
+            "limit": str(limit),
+        }
+        if symbol:
+            params["symbol"] = symbol
+        if start_time:
+            params["startTime"] = str(start_time)
+        if end_time:
+            params["endTime"] = str(end_time)
+        if cursor:
+            params["cursor"] = cursor
+
+        data = self._signed_request("/v5/position/closed-pnl", params)
+        if not data:
+            return [], None
+
+        result = data.get("result") or {}
+        rows = result.get("list") or []
+        next_cursor = result.get("nextPageCursor") or None
+
+        normalized = []
+        for r in rows:
+            normalized.append({
+                "order_id": r.get("orderId") or "",
+                "symbol": r.get("symbol") or "",
+                "side": r.get("side") or "",
+                "qty": float(r.get("qty", 0) or 0),
+                "closed_pnl": float(r.get("closedPnl", 0) or 0),
+                "created_time": int(r.get("createdTime", 0) or 0),
+                "updated_time": int(r.get("updatedTime", 0) or 0),
+            })
+
+        return normalized, next_cursor
     
     def fetch_positions(self, settle_coin: Optional[str] = None, symbol: Optional[str] = None) -> List[Dict]:
         """Fetch current positions"""

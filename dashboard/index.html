@@ -578,6 +578,7 @@
       </label>
       <button id="refresh_analysis" data-i18n="button_refresh_analysis">Refresh Analysis</button>
       <button id="export_analysis" data-i18n="button_export_analysis">Export Analysis</button>
+      <button id="export_analysis_fills" data-i18n="button_export_fills">Export Fills</button>
     </div>
     
     <div id="analysis_content">
@@ -1003,6 +1004,7 @@
         tf_365d: '365 Days',
         button_refresh_analysis: 'Refresh Analysis',
         button_export_analysis: 'Export Analysis',
+        button_export_fills: 'Export Fills',
         analysis_hint: 'Click "Refresh Analysis" to load comprehensive trade analysis.',
         heading_chart: 'Chart',
         label_interval: 'Interval',
@@ -1222,6 +1224,7 @@
         tf_365d: '365 天',
         button_refresh_analysis: '刷新分析',
         button_export_analysis: '导出分析',
+        button_export_fills: '导出逐笔',
         analysis_hint: '点击“刷新分析”加载完整交易分析。',
         heading_chart: '图表',
         label_interval: '周期',
@@ -3372,6 +3375,42 @@
       return rows;
     }
 
+    function buildFillRows(fills) {
+      return (fills || []).map(f => {
+        const ts = f.ts ? new Date(f.ts * 1000) : null;
+        const timeStr = ts ? `${String(ts.getUTCHours()).padStart(2, '0')}:${String(ts.getUTCMinutes()).padStart(2, '0')} ${ts.getUTCFullYear()}-${String(ts.getUTCMonth() + 1).padStart(2, '0')}-${String(ts.getUTCDate()).padStart(2, '0')}` : '';
+        return {
+          time: timeStr,
+          symbol: f.symbol || '',
+          side: f.side || '',
+          qty: f.qty ?? '',
+          price: f.price ?? '',
+          notional: f.notional ?? '',
+          fee: f.fee ?? '',
+          fee_ccy: f.fee_ccy || '',
+          exec_pnl: f.exec_pnl ?? '',
+          order_id: f.order_id || '',
+          is_maker: f.is_maker ?? ''
+        };
+      });
+    }
+
+    function getFillColumns() {
+      return [
+        { key: 'time', label: 'Time(UTC)' },
+        { key: 'symbol', label: 'Symbol' },
+        { key: 'side', label: 'Side' },
+        { key: 'qty', label: 'Qty' },
+        { key: 'price', label: 'Price' },
+        { key: 'notional', label: 'Notional' },
+        { key: 'fee', label: 'Fee' },
+        { key: 'fee_ccy', label: 'Fee Ccy' },
+        { key: 'exec_pnl', label: 'Exec PnL' },
+        { key: 'order_id', label: 'Order ID' },
+        { key: 'is_maker', label: 'Is Maker' }
+      ];
+    }
+
     function getBybitOrderHistoryColumns() {
       return [
         { key: 'market', label: 'Market' },
@@ -3580,6 +3619,28 @@
         const rows = buildBybitOrderHistoryRows(fills);
         const columns = getBybitOrderHistoryColumns();
         const filename = buildExportFilename('analysis_bybit', symbol, startVal, endVal, days);
+        downloadCsv(filename, rows, columns);
+      }).catch(e => alert(t('alert_export_error')));
+    });
+    on('export_analysis_fills', 'click', () => {
+      const days = document.getElementById('analysis_timeframe').value;
+      const symbol = getAnalysisSymbol();
+      const qs = new URLSearchParams({ days, symbol: symbol || '' });
+      qs.set('source', 'rest');
+      qs.set('limit', '20000');
+      let startVal = '';
+      let endVal = '';
+      if (isAnalysisDateRangeEnabled()) {
+        startVal = document.getElementById('analysis_start')?.value || '';
+        endVal = document.getElementById('analysis_end')?.value || '';
+        if (startVal) qs.set('start', startVal);
+        if (endVal) qs.set('end', endVal);
+      }
+      fetch(`/api/analysis/fills?${qs.toString()}`).then(r => r.json()).then(data => {
+        const fills = Array.isArray(data?.fills) ? data.fills : [];
+        const rows = buildFillRows(fills);
+        const columns = getFillColumns();
+        const filename = buildExportFilename('analysis_fills', symbol, startVal, endVal, days);
         downloadCsv(filename, rows, columns);
       }).catch(e => alert(t('alert_export_error')));
     });

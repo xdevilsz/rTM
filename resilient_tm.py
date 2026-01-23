@@ -1212,6 +1212,30 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 window_start = window_end + 1
             return results[:limit]
 
+        def _fetch_closed_pnl(limit: int, start_time: int, end_time: int, symbol_filter: str | None) -> list[dict]:
+            results: list[dict] = []
+            page_limit = min(200, max(1, limit))
+            max_range_ms = 7 * 24 * 60 * 60 * 1000
+            window_start = start_time
+            while len(results) < limit and window_start <= end_time:
+                window_end = min(end_time, window_start + max_range_ms - 1)
+                cursor: str | None = None
+                while len(results) < limit:
+                    batch, cursor = self.bybit_client.fetch_closed_pnl_page(
+                        limit=page_limit,
+                        symbol=symbol_filter,
+                        start_time=window_start,
+                        end_time=window_end,
+                        cursor=cursor
+                    )
+                    if not batch:
+                        break
+                    results.extend(batch)
+                    if not cursor:
+                        break
+                window_start = window_end + 1
+            return results[:limit]
+
         try:
             if force_rest:
                 if not self.bybit_key or not self.bybit_secret:
@@ -1239,6 +1263,26 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 if symbol:
                     fills = [f for f in fills if f.get("symbol") == symbol]
                 trade_fills = [f for f in fills if not f.get("exec_type") or f.get("exec_type") == "trade"]
+                if trade_fills and all((f.get("exec_pnl") or 0) == 0 for f in trade_fills):
+                    closed_rows = _fetch_closed_pnl(limit, start_ms, end_ms, symbol)
+                    pnl_by_order: dict[str, float] = {}
+                    qty_by_order: dict[str, float] = {}
+                    for row in closed_rows:
+                        oid = row.get("order_id") or ""
+                        if not oid:
+                            continue
+                        pnl_by_order[oid] = pnl_by_order.get(oid, 0.0) + float(row.get("closed_pnl") or 0.0)
+                        qty_by_order[oid] = qty_by_order.get(oid, 0.0) + float(row.get("qty") or 0.0)
+                    if pnl_by_order:
+                        for f in trade_fills:
+                            oid = f.get("order_id") or ""
+                            if oid not in pnl_by_order:
+                                continue
+                            total_qty = qty_by_order.get(oid) or 0.0
+                            if total_qty <= 0:
+                                continue
+                            fill_qty = float(f.get("qty") or 0.0)
+                            f["exec_pnl"] = pnl_by_order[oid] * (fill_qty / total_qty)
                 return trade_fills, None
 
             if self.mode == "realtime":

@@ -145,6 +145,53 @@
       border-color: rgba(124, 196, 255, 0.6);
       box-shadow: 0 8px 18px rgba(61, 138, 255, 0.2);
     }
+    .analysis-loading {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(20, 28, 39, 0.7);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .analysis-loading.active { display: flex; }
+    .analysis-loading-bar {
+      width: 120px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(124, 196, 255, 0.12);
+      position: relative;
+      overflow: hidden;
+    }
+    .analysis-loading-bar::after {
+      content: '';
+      position: absolute;
+      left: -30%;
+      top: 0;
+      height: 100%;
+      width: 40%;
+      background: linear-gradient(90deg, transparent, rgba(124, 196, 255, 0.8), transparent);
+      animation: analysisBar 1.2s ease-in-out infinite;
+    }
+    .analysis-loading-gear {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid rgba(124, 196, 255, 0.6);
+      border-top-color: transparent;
+      animation: analysisSpin 0.9s linear infinite;
+    }
+    @keyframes analysisBar {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(220%); }
+    }
+    @keyframes analysisSpin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
     .analysis-summary {
       margin-top: 16px;
       padding: 16px;
@@ -557,9 +604,9 @@
       <label><span data-i18n="label_timeframe">Timeframe</span>
         <select id="analysis_timeframe">
           <option value="1" data-i18n="tf_1d">1 Day</option>
-          <option value="7" data-i18n="tf_7d">7 Days</option>
+          <option value="7" selected data-i18n="tf_7d">7 Days</option>
           <option value="14" data-i18n="tf_14d">14 Days</option>
-          <option value="30" selected data-i18n="tf_30d">30 Days</option>
+          <option value="30" data-i18n="tf_30d">30 Days</option>
           <option value="60" data-i18n="tf_60d">60 Days</option>
           <option value="90" data-i18n="tf_90d">90 Days</option>
           <option value="180" data-i18n="tf_180d">180 Days</option>
@@ -576,8 +623,16 @@
       <label><span data-i18n="label_end_date">End</span>
         <input id="analysis_end" type="date">
       </label>
-      <button id="refresh_analysis" data-i18n="button_refresh_analysis">Refresh Analysis</button>
+      <button id="refresh_analysis" data-i18n="button_refresh_analysis">Generate Analysis</button>
       <button id="export_analysis" data-i18n="button_export_analysis">Export Analysis</button>
+      <button id="export_analysis_fills" data-i18n="button_export_fills">Export Fills</button>
+      <button id="export_order_history" data-i18n="button_export_orders">Export Orders</button>
+      <button id="compare_sources" data-i18n="button_compare_sources">Compare Sources</button>
+    </div>
+    <div id="analysis_loading" class="analysis-loading">
+      <div class="analysis-loading-bar"></div>
+      <div class="analysis-loading-gear"></div>
+      <span data-i18n="analysis_generating">Generating analysis...</span>
     </div>
     
     <div id="analysis_content">
@@ -893,7 +948,10 @@
       lastKlineInterval: '',
       chartHasLoaded: false,
       lastKlineTime: 0,
-      newCandleCount: 0
+      newCandleCount: 0,
+      analysisData: null,
+      analysisMode: 'full',
+      analysisCompare: null
     };
     let chart = null;
     let candleSeries = null;
@@ -928,7 +986,7 @@
         status_trading_disabled: 'Trading disabled.',
         status_trading_prompt: 'Trading disabled.',
         status_no_analysis: 'No analysis data available',
-        status_analysis_hint: 'Click "Refresh Analysis" to load comprehensive trade analysis.',
+        status_analysis_hint: 'Click "Generate Analysis" to load comprehensive trade analysis.',
         status_positions_hint: 'Click "Refresh Positions" to load current positions.',
         status_orders_hint: 'Fetch active orders (API credentials required).',
         status_no_positions: 'No open positions',
@@ -1001,9 +1059,13 @@
         tf_90d: '90 Days',
         tf_180d: '180 Days',
         tf_365d: '365 Days',
-        button_refresh_analysis: 'Refresh Analysis',
+        button_refresh_analysis: 'Generate Analysis',
+        analysis_generating: 'Generating analysis...',
         button_export_analysis: 'Export Analysis',
-        analysis_hint: 'Click "Refresh Analysis" to load comprehensive trade analysis.',
+        button_export_fills: 'Export Fills',
+        button_export_orders: 'Export Orders',
+        button_compare_sources: 'Compare Sources',
+        analysis_hint: 'Click "Generate Analysis" to load comprehensive trade analysis.',
         heading_chart: 'Chart',
         label_interval: 'Interval',
         label_refresh_ms: 'Refresh (ms)',
@@ -1053,6 +1115,12 @@
         analysis_heading_basic: 'Basic Statistics',
         analysis_heading_summary: 'Summary',
         analysis_heading_advice: 'Actionable Advice',
+        analysis_heading_compare: 'Data Source Comparison',
+        analysis_label_fills_rows: 'Fills Rows',
+        analysis_label_orders_rows: 'Orders Rows',
+        analysis_label_orders_filled: 'Orders Filled',
+        analysis_label_fields_present: 'Fields Present',
+        analysis_label_fetch_time: 'Fetch Time (ms)',
         analysis_heading_performance: 'Performance Metrics',
         analysis_heading_risk: 'Risk Metrics',
         analysis_heading_maker_taker: 'Maker vs Taker',
@@ -1147,7 +1215,7 @@
         status_trading_disabled: '交易已禁用。',
         status_trading_prompt: '交易已禁用。',
         status_no_analysis: '暂无分析数据',
-        status_analysis_hint: '点击“刷新分析”加载完整交易分析。',
+        status_analysis_hint: '点击“生成分析”加载完整交易分析。',
         status_positions_hint: '点击“刷新持仓”加载当前持仓。',
         status_orders_hint: '获取活跃订单（需要 API 凭据）。',
         status_no_positions: '暂无持仓',
@@ -1220,9 +1288,13 @@
         tf_90d: '90 天',
         tf_180d: '180 天',
         tf_365d: '365 天',
-        button_refresh_analysis: '刷新分析',
+        button_refresh_analysis: '生成分析',
+        analysis_generating: '分析生成中...',
         button_export_analysis: '导出分析',
-        analysis_hint: '点击“刷新分析”加载完整交易分析。',
+        button_export_fills: '导出逐笔',
+        button_export_orders: '导出订单',
+        button_compare_sources: '来源对比',
+        analysis_hint: '点击“生成分析”加载完整交易分析。',
         heading_chart: '图表',
         label_interval: '周期',
         label_refresh_ms: '刷新（毫秒）',
@@ -1272,6 +1344,12 @@
         analysis_heading_basic: '基础统计',
         analysis_heading_summary: '摘要',
         analysis_heading_advice: '针对性建议',
+        analysis_heading_compare: '数据源对比',
+        analysis_label_fills_rows: '逐笔行数',
+        analysis_label_orders_rows: '订单行数',
+        analysis_label_orders_filled: '成交订单',
+        analysis_label_fields_present: '字段覆盖',
+        analysis_label_fetch_time: '获取耗时(ms)',
         analysis_heading_performance: '绩效指标',
         analysis_heading_risk: '风险指标',
         analysis_heading_maker_taker: 'Maker vs Taker',
@@ -1493,9 +1571,6 @@
         if (tradingBtn) tradingBtn.textContent = t('button_enable_trading');
       }
       syncChartTradingState();
-      if (state.metrics) {
-        fetchAnalysis();
-      }
       fetchStatus();
     }
 
@@ -1851,11 +1926,23 @@
       } catch (e) {}
     }
 
+    function setAnalysisLoading(active) {
+      const el = document.getElementById('analysis_loading');
+      if (!el) return;
+      if (active) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    }
+
     async function fetchAnalysis() {
+      setAnalysisLoading(true);
       try {
         const mode = document.getElementById('analysis_mode').value;
         const days = document.getElementById('analysis_timeframe').value;
         const symbol = getAnalysisSymbol();
+        state.analysisCompare = null;
         const qs = new URLSearchParams({ days, symbol: symbol || '' });
         qs.set('source', 'rest');
         qs.set('limit', '20000');
@@ -1882,11 +1969,15 @@
           document.getElementById('analysis_content').innerHTML = `<div class="muted">${data.error}</div>`;
           return;
         }
+        state.analysisData = data;
+        state.analysisMode = mode;
         renderAnalysis(data, mode);
       } catch (e) {
         console.error('Analysis fetch error:', e);
         const errorMsg = e.message || 'Unknown error occurred';
         document.getElementById('analysis_content').innerHTML = `<div class="muted">${t('status_analysis_error')} ${errorMsg}<br>${currentLang === 'zh' ? '请检查浏览器控制台。' : 'Check browser console for details.'}</div>`;
+      } finally {
+        setAnalysisLoading(false);
       }
     }
 
@@ -2050,6 +2141,26 @@
       `;
     }
 
+    function renderCompareBlock(compare) {
+      if (!compare || !compare.ok) return '';
+      const fills = compare.fills || {};
+      const orders = compare.orders || {};
+      return `
+        <h3>${t('analysis_heading_compare')}</h3>
+        <div class="row">
+          <div class="card"><div class="label">${t('analysis_label_fills_rows')}</div><div class="value">${fills.rows || 0}</div></div>
+          <div class="card"><div class="label">${t('analysis_label_fetch_time')}</div><div class="value">${fills.ms || 0}</div></div>
+          <div class="card"><div class="label">${t('analysis_label_fields_present')}</div><div class="value">${fills.fields_present || 0}</div></div>
+        </div>
+        <div class="row">
+          <div class="card"><div class="label">${t('analysis_label_orders_rows')}</div><div class="value">${orders.rows || 0}</div></div>
+          <div class="card"><div class="label">${t('analysis_label_orders_filled')}</div><div class="value">${orders.filled_rows || 0}</div></div>
+          <div class="card"><div class="label">${t('analysis_label_fetch_time')}</div><div class="value">${orders.ms || 0}</div></div>
+          <div class="card"><div class="label">${t('analysis_label_fields_present')}</div><div class="value">${orders.fields_present || 0}</div></div>
+        </div>
+      `;
+    }
+
     function clearAnalysisDateFilters() {
       const start = document.getElementById('analysis_start');
       const end = document.getElementById('analysis_end');
@@ -2085,6 +2196,9 @@
 
       const insights = buildAnalysisInsights(data);
       html += renderAnalysisSummary(insights);
+      if (state.analysisCompare) {
+        html += renderCompareBlock(state.analysisCompare);
+      }
 
       if (mode === 'full' || mode === 'performance') {
         const perf = data.performance || {};
@@ -3372,6 +3486,82 @@
       return rows;
     }
 
+    function formatUtcFromMs(value) {
+      if (!value) return '';
+      const ms = Number(value);
+      if (!Number.isFinite(ms)) return '';
+      const d = new Date(ms);
+      if (Number.isNaN(d.getTime())) return '';
+      return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} ${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    function buildOrderHistoryRows(orders) {
+      return (orders || []).map(o => {
+        const orderId = o.orderId || o.orderID || '';
+        const orderQty = o.qty ?? o.orderQty ?? '';
+        const filledQty = o.cumExecQty ?? o.filledQty ?? '';
+        const avgPrice = o.avgPrice ?? o.filledPrice ?? '';
+        const orderPrice = o.price ?? o.orderPrice ?? '';
+        return {
+          market: o.symbol || '',
+          order_qty: orderQty,
+          order_price: orderPrice,
+          filled_price: avgPrice,
+          trigger_price: o.triggerPrice ?? '',
+          filled_qty: filledQty,
+          fee_info: o.feeInfo ?? '',
+          direction: o.side === 'Buy' ? 'Long' : o.side === 'Sell' ? 'Short' : (o.side || ''),
+          order_type: o.orderType || '',
+          order_status: o.orderStatus || '',
+          order_id: orderId ? String(orderId).slice(-8) : '',
+          order_time: formatUtcFromMs(o.updatedTime || o.createdTime || ''),
+          tif: o.timeInForce || '',
+          create_time: formatUtcFromMs(o.createdTime || ''),
+          max_slippage: o.maxSlippage ?? '',
+          max_slippage_type: o.maxSlippageType ?? '',
+          limit_tpsl_strategy: o.tpslMode ?? '',
+          bbo_side_type: o.bboSideType ?? '',
+          bbo_level: o.bboLevel ?? ''
+        };
+      });
+    }
+
+    function buildFillRows(fills) {
+      return (fills || []).map(f => {
+        const ts = f.ts ? new Date(f.ts * 1000) : null;
+        const timeStr = ts ? `${String(ts.getUTCHours()).padStart(2, '0')}:${String(ts.getUTCMinutes()).padStart(2, '0')} ${ts.getUTCFullYear()}-${String(ts.getUTCMonth() + 1).padStart(2, '0')}-${String(ts.getUTCDate()).padStart(2, '0')}` : '';
+        return {
+          time: timeStr,
+          symbol: f.symbol || '',
+          side: f.side || '',
+          qty: f.qty ?? '',
+          price: f.price ?? '',
+          notional: f.notional ?? '',
+          fee: f.fee ?? '',
+          fee_ccy: f.fee_ccy || '',
+          exec_pnl: f.exec_pnl ?? '',
+          order_id: f.order_id || '',
+          is_maker: f.is_maker ?? ''
+        };
+      });
+    }
+
+    function getFillColumns() {
+      return [
+        { key: 'time', label: 'Time(UTC)' },
+        { key: 'symbol', label: 'Symbol' },
+        { key: 'side', label: 'Side' },
+        { key: 'qty', label: 'Qty' },
+        { key: 'price', label: 'Price' },
+        { key: 'notional', label: 'Notional' },
+        { key: 'fee', label: 'Fee' },
+        { key: 'fee_ccy', label: 'Fee Ccy' },
+        { key: 'exec_pnl', label: 'Exec PnL' },
+        { key: 'order_id', label: 'Order ID' },
+        { key: 'is_maker', label: 'Is Maker' }
+      ];
+    }
+
     function getBybitOrderHistoryColumns() {
       return [
         { key: 'market', label: 'Market' },
@@ -3545,22 +3735,11 @@
       renderHistory();
       renderConsistency();
     });
-    on('analysis_symbol', 'change', () => fetchAnalysis());
     on('analysis_timeframe', 'change', () => {
       document.getElementById('analysis_use_range').checked = false;
       syncAnalysisDateRangeUI();
-      fetchAnalysis();
     });
-    on('analysis_use_range', 'change', () => {
-      syncAnalysisDateRangeUI();
-      fetchAnalysis();
-    });
-    on('analysis_start', 'change', () => {
-      if (isAnalysisDateRangeEnabled()) fetchAnalysis();
-    });
-    on('analysis_end', 'change', () => {
-      if (isAnalysisDateRangeEnabled()) fetchAnalysis();
-    });
+    on('analysis_use_range', 'change', syncAnalysisDateRangeUI);
     on('export_analysis', 'click', () => {
       const days = document.getElementById('analysis_timeframe').value;
       const symbol = getAnalysisSymbol();
@@ -3583,6 +3762,69 @@
         downloadCsv(filename, rows, columns);
       }).catch(e => alert(t('alert_export_error')));
     });
+    on('export_analysis_fills', 'click', () => {
+      const days = document.getElementById('analysis_timeframe').value;
+      const symbol = getAnalysisSymbol();
+      const qs = new URLSearchParams({ days, symbol: symbol || '' });
+      qs.set('source', 'rest');
+      qs.set('limit', '20000');
+      let startVal = '';
+      let endVal = '';
+      if (isAnalysisDateRangeEnabled()) {
+        startVal = document.getElementById('analysis_start')?.value || '';
+        endVal = document.getElementById('analysis_end')?.value || '';
+        if (startVal) qs.set('start', startVal);
+        if (endVal) qs.set('end', endVal);
+      }
+      fetch(`/api/analysis/fills?${qs.toString()}`).then(r => r.json()).then(data => {
+        const fills = Array.isArray(data?.fills) ? data.fills : [];
+        const rows = buildFillRows(fills);
+        const columns = getFillColumns();
+        const filename = buildExportFilename('analysis_fills', symbol, startVal, endVal, days);
+        downloadCsv(filename, rows, columns);
+      }).catch(e => alert(t('alert_export_error')));
+    });
+    on('export_order_history', 'click', () => {
+      const days = document.getElementById('analysis_timeframe').value;
+      const symbol = getAnalysisSymbol();
+      const qs = new URLSearchParams({ days, symbol: symbol || '' });
+      qs.set('limit', '20000');
+      let startVal = '';
+      let endVal = '';
+      if (isAnalysisDateRangeEnabled()) {
+        startVal = document.getElementById('analysis_start')?.value || '';
+        endVal = document.getElementById('analysis_end')?.value || '';
+        if (startVal) qs.set('start', startVal);
+        if (endVal) qs.set('end', endVal);
+      }
+      fetch(`/api/orders/history?${qs.toString()}`).then(r => r.json()).then(data => {
+        const orders = Array.isArray(data?.orders) ? data.orders : [];
+        const rows = buildOrderHistoryRows(orders);
+        const columns = getBybitOrderHistoryColumns();
+        const filename = buildExportFilename('order_history', symbol, startVal, endVal, days);
+        downloadCsv(filename, rows, columns);
+      }).catch(e => alert(t('alert_export_error')));
+    });
+    on('compare_sources', 'click', () => {
+      const days = document.getElementById('analysis_timeframe').value;
+      const symbol = getAnalysisSymbol();
+      const qs = new URLSearchParams({ days, symbol: symbol || '' });
+      qs.set('limit', '20000');
+      if (isAnalysisDateRangeEnabled()) {
+        const startVal = document.getElementById('analysis_start')?.value || '';
+        const endVal = document.getElementById('analysis_end')?.value || '';
+        if (startVal) qs.set('start', startVal);
+        if (endVal) qs.set('end', endVal);
+      }
+      fetch(`/api/analysis/compare?${qs.toString()}`).then(r => r.json()).then(data => {
+        state.analysisCompare = data && data.ok ? data : null;
+        if (state.analysisData) {
+          renderAnalysis(state.analysisData, state.analysisMode || 'full');
+        } else {
+          document.getElementById('analysis_content').innerHTML = renderCompareBlock(state.analysisCompare);
+        }
+      }).catch(e => alert(t('alert_export_error')));
+    });
     renderHistory();
     renderConsistency();
     fetchStatus();
@@ -3593,10 +3835,9 @@
     ensureChartReady();
     setInterval(fetchStatus, 5000);
     setInterval(fetchMetrics, 2000);
-    // Auto-refresh analysis and positions every 10 seconds if in realtime mode
+    // Auto-refresh positions every 10 seconds if in realtime mode
     setInterval(() => {
       if (state.metrics && (state.metrics.mode === 'realtime' || state.metrics.mode === 'sync')) {
-        fetchAnalysis();
         fetchPositions();
       }
     }, 10000);

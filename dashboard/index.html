@@ -1394,6 +1394,7 @@
         analysis_hint: 'Click "Generate Analysis" to load comprehensive trade analysis.',
         advanced_analysis_hint: 'Click "Generate Advanced Analysis" to explore time-based performance.',
         analysis_heading_entry_exit: 'Average Entry / Exit',
+        analysis_heading_options: 'Options Exposure',
         analysis_label_avg_entry_price: 'Avg Entry Price',
         analysis_label_avg_exit_price: 'Avg Exit Price',
         analysis_label_avg_entry_qty: 'Avg Entry Qty',
@@ -1402,6 +1403,11 @@
         analysis_label_avg_exit_notional: 'Avg Exit Notional',
         analysis_label_avg_entry_fee: 'Avg Entry Fee',
         analysis_label_avg_exit_fee: 'Avg Exit Fee',
+        analysis_label_delta: 'Delta',
+        analysis_label_gamma: 'Gamma',
+        analysis_label_theta: 'Theta',
+        analysis_label_vega: 'Vega',
+        analysis_label_iv_pnl: 'IV Shock PnL',
         advanced_heading_time_correlation: 'Time vs PnL Correlation',
         advanced_label_corr_hour_pnl: 'Hour-of-Day vs PnL',
         advanced_label_corr_tradecount_pnl: 'Trade Count vs PnL',
@@ -1688,6 +1694,7 @@
         analysis_hint: '点击“生成分析”加载完整交易分析。',
         advanced_analysis_hint: '点击“生成高级分析”查看时间维度表现。',
         analysis_heading_entry_exit: '平均进出场',
+        analysis_heading_options: '期权敞口',
         analysis_label_avg_entry_price: '平均进场价',
         analysis_label_avg_exit_price: '平均出场价',
         analysis_label_avg_entry_qty: '平均进场数量',
@@ -1696,6 +1703,11 @@
         analysis_label_avg_exit_notional: '平均出场名义',
         analysis_label_avg_entry_fee: '平均进场手续费',
         analysis_label_avg_exit_fee: '平均出场手续费',
+        analysis_label_delta: 'Delta',
+        analysis_label_gamma: 'Gamma',
+        analysis_label_theta: 'Theta',
+        analysis_label_vega: 'Vega',
+        analysis_label_iv_pnl: 'IV 冲击盈亏',
         advanced_heading_time_correlation: '交易时间 vs 盈亏相关',
         advanced_label_corr_hour_pnl: '小时段 vs 盈亏',
         advanced_label_corr_tradecount_pnl: '交易频次 vs 盈亏',
@@ -2452,6 +2464,17 @@
         }
         state.analysisData = data;
         state.analysisMode = mode;
+        try {
+          const optRes = await fetch(`/api/options/report?settle=USDT&iv_btc=0.44&iv_eth=0.65&iv_shock=0.0`, { cache: 'no-store' });
+          if (optRes.ok) {
+            const optJson = await optRes.json();
+            state.analysisOptions = optJson.ok ? optJson.report : null;
+          } else {
+            state.analysisOptions = null;
+          }
+        } catch (e) {
+          state.analysisOptions = null;
+        }
         renderAnalysis(data, mode);
       } catch (e) {
         console.error('Analysis fetch error:', e);
@@ -2839,6 +2862,18 @@
           <th>${t('analysis_label_avg_entry_qty')}</th>
           <th>${t('analysis_label_avg_exit_qty')}</th>
         </tr></thead><tbody>${rows.join('')}</tbody></table>`;
+      }
+
+      if (state.analysisOptions) {
+        const opt = state.analysisOptions;
+        html += `<h3>${t('analysis_heading_options')}</h3>`;
+        html += '<div class="row">';
+        html += `<div class="card"><div class="label">${t('analysis_label_delta')}</div><div class="value">${formatNumber(opt.total?.delta || 0, 4)}</div></div>`;
+        html += `<div class="card"><div class="label">${t('analysis_label_gamma')}</div><div class="value">${formatNumber(opt.total?.gamma || 0, 6)}</div></div>`;
+        html += `<div class="card"><div class="label">${t('analysis_label_theta')}</div><div class="value">${formatNumber(opt.total?.theta || 0, 6)}</div></div>`;
+        html += `<div class="card"><div class="label">${t('analysis_label_vega')}</div><div class="value">${formatNumber(opt.total?.vega || 0, 6)}</div></div>`;
+        html += `<div class="card"><div class="label">${t('analysis_label_iv_pnl')}</div><div class="value">${formatNumber(opt.total?.pnl_reprice || 0, 4)}</div></div>`;
+        html += '</div>';
       }
       }
 

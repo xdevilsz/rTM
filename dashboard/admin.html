@@ -1145,6 +1145,12 @@
           <option value="pptx">PPTX</option>
         </select>
       </label>
+      <label><span data-i18n="label_report_lang">Report Language</span>
+        <select id="admin_report_lang">
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
+      </label>
       <button id="admin_generate" data-i18n="button_generate_report">Generate Report</button>
     </div>
     <div id="admin_status" class="muted" data-i18n="admin_hint">Generate a report for your account trading data.</div>
@@ -1504,6 +1510,7 @@
         admin_hint: 'Generate a report for your account trading data.',
         label_format: 'Format',
         label_admin_token: 'Admin Token',
+        label_report_lang: 'Report Language',
         help_section_api: 'API Key Setup',
         help_api_1: 'Use read-only keys for analysis/export. Trading requires keys with order permissions.',
         help_api_2: 'Keys are stored in memory for the session. Use .env if you prefer.',
@@ -1804,6 +1811,7 @@
         admin_hint: '生成账户交易数据的 PDF / PPTX 报表。',
         label_format: '格式',
         label_admin_token: '管理令牌',
+        label_report_lang: '报表语言',
         help_section_api: 'API 密钥设置',
         help_api_1: '分析/导出使用只读密钥；交易需要下单权限。',
         help_api_2: '密钥仅保存在本次会话内存中，可使用 .env。',
@@ -2056,6 +2064,8 @@
       currentLang = I18N[lang] ? lang : 'en';
       const select = document.getElementById('lang_select');
       if (select) select.value = currentLang;
+      const reportLang = document.getElementById('admin_report_lang');
+      if (reportLang) reportLang.value = currentLang;
       applyTranslations();
       updateSymbolOptions();
       renderHistory();
@@ -4960,20 +4970,143 @@
       window.history.replaceState({}, '', url);
       checkAdmin();
     });
-    document.getElementById('admin_generate')?.addEventListener('click', () => {
+    function inlineSvgStyles(svgEl) {
+      const elements = svgEl.querySelectorAll('*');
+      elements.forEach((el) => {
+        const style = window.getComputedStyle(el);
+        const props = [
+          'fill',
+          'stroke',
+          'stroke-width',
+          'opacity',
+          'font-size',
+          'font-family',
+          'font-weight',
+          'text-anchor',
+        ];
+        const inline = props.map(p => `${p}:${style.getPropertyValue(p)}`).join(';');
+        if (inline) el.setAttribute('style', inline);
+      });
+    }
+
+    async function svgToPngDataUrl(svgEl, scale = 5) {
+      return new Promise((resolve) => {
+        try {
+          const clone = svgEl.cloneNode(true);
+          clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+          inlineSvgStyles(clone);
+          const svgStr = new XMLSerializer().serializeToString(clone);
+          const svgB64 = btoa(unescape(encodeURIComponent(svgStr)));
+          const imgSrc = `data:image/svg+xml;base64,${svgB64}`;
+          const img = new Image();
+          img.onload = () => {
+            const viewBox = svgEl.viewBox?.baseVal;
+            const width = (viewBox && viewBox.width) ? viewBox.width : Number(svgEl.getAttribute('width')) || 180;
+            const height = (viewBox && viewBox.height) ? viewBox.height : Number(svgEl.getAttribute('height')) || 80;
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, width * scale);
+            canvas.height = Math.max(1, height * scale);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.onerror = () => resolve('');
+          img.src = imgSrc;
+        } catch (e) {
+          resolve('');
+        }
+      });
+    }
+
+    async function collectReportCharts(maxCharts = 12) {
+      const blocks = Array.from(document.querySelectorAll('#panel-analysis .analysis-chart-block, #panel-advanced-analysis .analysis-chart-block'));
+      const results = [];
+      for (const block of blocks) {
+        if (results.length >= maxCharts) break;
+        const titleEl = block.querySelector('h3');
+        const svg = block.querySelector('svg');
+        if (!svg) continue;
+        const dataUrl = await svgToPngDataUrl(svg, 2);
+        if (!dataUrl) continue;
+        results.push({
+          title: titleEl ? titleEl.textContent.trim() : '',
+          dataUrl
+        });
+      }
+      return results;
+    }
+
+    document.getElementById('admin_generate')?.addEventListener('click', async () => {
       const days = document.getElementById('admin_timeframe').value;
       const symbol = (document.getElementById('admin_symbol')?.value || '').trim();
       const start = document.getElementById('admin_start')?.value || '';
       const end = document.getElementById('admin_end')?.value || '';
       const format = document.getElementById('admin_format')?.value || 'pdf';
+      const lang = document.getElementById('admin_report_lang')?.value || currentLang || 'en';
       const token = getAdminToken();
-      const qs = new URLSearchParams({ days, format, token });
-      if (symbol) qs.set('symbol', symbol);
-      if (start) qs.set('start', start);
-      if (end) qs.set('end', end);
       const status = document.getElementById('admin_status');
       if (status) status.textContent = currentLang === 'zh' ? '正在生成报表...' : 'Generating report...';
-      window.location.href = `/api/admin/report?${qs.toString()}`;
+      const analysisTf = document.getElementById('analysis_timeframe');
+      if (analysisTf) analysisTf.value = days;
+      const advancedTf = document.getElementById('advanced_timeframe');
+      if (advancedTf) advancedTf.value = days;
+      const analysisSymbol = document.getElementById('analysis_symbol');
+      const advancedSymbol = document.getElementById('advanced_symbol');
+      if (analysisSymbol) analysisSymbol.value = symbol;
+      if (advancedSymbol) advancedSymbol.value = symbol;
+      const hasRange = !!(start || end);
+      const analysisUseRange = document.getElementById('analysis_use_range');
+      const advancedUseRange = document.getElementById('advanced_use_range');
+      if (analysisUseRange) analysisUseRange.checked = hasRange;
+      if (advancedUseRange) advancedUseRange.checked = hasRange;
+      if (hasRange) {
+        const aStart = document.getElementById('analysis_start');
+        const aEnd = document.getElementById('analysis_end');
+        const advStart = document.getElementById('advanced_start');
+        const advEnd = document.getElementById('advanced_end');
+        if (aStart) aStart.value = start;
+        if (aEnd) aEnd.value = end;
+        if (advStart) advStart.value = start;
+        if (advEnd) advEnd.value = end;
+      }
+      try {
+        await fetchAnalysis();
+        await fetchAdvancedAnalysis();
+      } catch (e) {}
+      const charts = format === 'pdf' ? await collectReportCharts(16) : [];
+      const payload = { days, symbol, start, end, format, lang, charts, source: 'rest', limit: '20000' };
+      try {
+        const endpoint = format === 'pdf' ? '/api/admin/report/premium' : '/api/admin/report';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'X-Admin-Token': token } : {})
+          },
+          body: JSON.stringify(payload)
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || contentType.includes('application/json')) {
+          const data = await res.json().catch(() => ({}));
+          const msg = data.error || (currentLang === 'zh' ? '生成报表失败。' : 'Report generation failed.');
+          if (status) status.textContent = msg;
+          return;
+        }
+        const blob = await res.blob();
+        const link = document.createElement('a');
+        const url = window.URL.createObjectURL(blob);
+        link.href = url;
+        link.download = `report_${new Date().toISOString().slice(0, 10)}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        if (status) status.textContent = currentLang === 'zh' ? '报表已生成。' : 'Report generated.';
+      } catch (e) {
+        if (status) status.textContent = currentLang === 'zh' ? '生成报表失败。' : 'Report generation failed.';
+      }
     });
     checkAdmin();
     on('export_analysis', 'click', () => {

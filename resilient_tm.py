@@ -1,7 +1,10 @@
 import argparse
+import base64
 import asyncio
 import hashlib
+import heapq
 import hmac
+import io
 import json
 import os
 import threading
@@ -25,6 +28,13 @@ from dotenv import load_dotenv
 from analyzer import TradeAnalyzer
 from bybit_client import BybitAPIClient, BybitWebSocketClient
 from trading_service import TradingService
+try:
+    from extensions.reporting.generate_report import generate_report as generate_premium_report
+except Exception:
+    try:
+        from reporting.generate_report import generate_report as generate_premium_report
+    except Exception:
+        generate_premium_report = None
 
 # Load .env file from current directory or script directory
 load_dotenv()
@@ -34,6 +44,7 @@ ROOT = Path(__file__).resolve().parent
 DASHBOARD_DIR = ROOT / "dashboard"
 ADMIN_CONFIG_PATH = ROOT / "admin_config.json"
 REPORTS_DIR = ROOT / "reports"
+LOGS_DIR = ROOT / "logs"
 SERVER_START_TS = time.time()
 
 # Global state for realtime mode
@@ -47,6 +58,10 @@ _realtime_data = {
     "running": False,
 }
 _realtime_lock = threading.Lock()
+_markout_lock = threading.Lock()
+_markout_heap: list[tuple[float, str, str]] = []
+_pending_markouts: dict[str, dict] = {}
+_markout_thread: Optional[threading.Thread] = None
 
 
 def _env(key: str, default: str = "") -> str:
@@ -78,6 +93,90 @@ def _normalize_ts(value) -> float:
     if ts > 1e12:
         ts = ts / 1000.0
     return ts
+
+def _fetch_mid_price(symbol: str) -> float | None:
+    try:
+        params = {"category": TradeOptimizerHandler.bybit_category, "symbol": symbol, "limit": "1"}
+        data = TradeOptimizerHandler._public_get(TradeOptimizerHandler, "/v5/market/orderbook", params)
+        if not data:
+            return None
+        rows = (data.get("result") or {}).get("list") or []
+        if not rows:
+            return None
+        best = rows[0]
+        bid = float(best[0]) if len(best) > 0 else 0.0
+        ask = float(best[1]) if len(best) > 1 else 0.0
+        if bid and ask:
+            return (bid + ask) / 2.0
+    except Exception:
+        return None
+    return None
+
+def _enqueue_markout(fill_id: str, symbol: str, delay_sec: int, label: str):
+    run_at = time.time() + delay_sec
+    with _markout_lock:
+        heapq.heappush(_markout_heap, (run_at, fill_id, label))
+
+def _write_markout_record(record: dict):
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        path = LOGS_DIR / "execution_markout.jsonl"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        return
+
+def _log_execution_markout(fill: dict):
+    symbol = fill.get("symbol") or ""
+    if not symbol:
+        return
+    ts = _normalize_ts(fill.get("ts") or fill.get("timestamp")) or time.time()
+    qty = float(fill.get("qty") or 0)
+    price = float(fill.get("price") or 0)
+    order_id = fill.get("order_id") or ""
+    fill_id = f"{order_id}:{ts}:{qty}:{price}"
+    mid_now = _fetch_mid_price(symbol)
+    record = {
+        "fill_id": fill_id,
+        "ts": ts,
+        "symbol": symbol,
+        "side": fill.get("side") or "",
+        "qty": qty,
+        "price": price,
+        "mid_0s": mid_now,
+        "mid_1s": None,
+        "mid_5s": None,
+        "mid_30s": None,
+    }
+    with _markout_lock:
+        _pending_markouts[fill_id] = record
+    _enqueue_markout(fill_id, symbol, 1, "mid_1s")
+    _enqueue_markout(fill_id, symbol, 5, "mid_5s")
+    _enqueue_markout(fill_id, symbol, 30, "mid_30s")
+
+def _markout_worker():
+    while True:
+        now = time.time()
+        task = None
+        with _markout_lock:
+            if _markout_heap and _markout_heap[0][0] <= now:
+                task = heapq.heappop(_markout_heap)
+        if not task:
+            time.sleep(0.2)
+            continue
+        run_at, fill_id, label = task
+        record = None
+        with _markout_lock:
+            record = _pending_markouts.get(fill_id)
+        if not record:
+            continue
+        mid = _fetch_mid_price(record.get("symbol") or "")
+        record[label] = mid
+        done = all(record.get(k) is not None for k in ("mid_1s", "mid_5s", "mid_30s"))
+        if done:
+            _write_markout_record(record)
+            with _markout_lock:
+                _pending_markouts.pop(fill_id, None)
 
 
 def _build_metrics_from_fills(fills: list[dict]) -> dict:
@@ -468,10 +567,19 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return
 
-    def _build_report_summary(self, analysis: dict) -> list[str]:
+    def _build_report_summary(self, analysis: dict, lang: str) -> list[str]:
         basic = analysis.get("basic") or {}
         perf = analysis.get("performance") or {}
         risk = analysis.get("risk") or {}
+        if lang == "zh":
+            return [
+                f"总交易笔数: {basic.get('total_trades', 0)}",
+                f"总成交额: {basic.get('total_volume', 0):.2f}",
+                f"净盈亏: {basic.get('net_pnl', 0):.4f}",
+                f"胜率: {perf.get('win_rate', 0) * 100:.2f}%",
+                f"最大回撤: {perf.get('max_drawdown', 0):.4f}",
+                f"年化波动: {risk.get('volatility_annualised', 0):.4f}",
+            ]
         return [
             f"Total trades: {basic.get('total_trades', 0)}",
             f"Total volume: {basic.get('total_volume', 0):.2f}",
@@ -481,30 +589,593 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             f"Volatility (annual): {risk.get('volatility_annualised', 0):.4f}",
         ]
 
-    def _generate_pdf_report(self, analysis: dict, title: str) -> Path | None:
+    def _build_reflection_paragraph(self, analysis: dict, lang: str) -> str:
+        basic = analysis.get("basic") or {}
+        perf = analysis.get("performance") or {}
+        risk = analysis.get("risk") or {}
+        corr = analysis.get("time_correlations") or {}
+        net_pnl = float(basic.get("net_pnl") or 0)
+        win_rate = float(perf.get("win_rate") or 0) * 100
+        max_dd = float(perf.get("max_drawdown") or 0)
+        fee_rate = float(basic.get("fee_rate") or 0) * 100
+        corr_hour = float(corr.get("corr_hour_of_day_pnl") or 0)
+        direction = "positive" if net_pnl > 0 else "negative" if net_pnl < 0 else "flat"
+        corr_note = ""
+        if lang == "zh":
+            if abs(corr_hour) >= 0.25:
+                corr_note = f"时间段与盈亏相关性明显（{corr_hour:+.2f}）。"
+            elif abs(corr_hour) >= 0.1:
+                corr_note = f"时间段与盈亏相关性较弱（{corr_hour:+.2f}）。"
+        else:
+            if abs(corr_hour) >= 0.25:
+                corr_note = f"Time-of-day correlation to PnL is notable ({corr_hour:+.2f})."
+            elif abs(corr_hour) >= 0.1:
+                corr_note = f"Time-of-day correlation to PnL is mild ({corr_hour:+.2f})."
+        if lang == "zh":
+            parts = [
+                f"本周期净盈亏为 {net_pnl:.4f}（{('正' if net_pnl > 0 else '负' if net_pnl < 0 else '持平')}），胜率 {win_rate:.2f}%。",
+                f"最大回撤为 {max_dd:.4f}，手续费率约 {fee_rate:.4f}%。",
+            ]
+            if corr_note:
+                parts.append(corr_note)
+            return " ".join(parts)
+        parts = [
+            f"Net PnL is {net_pnl:.4f} ({direction}) with a win rate of {win_rate:.2f}%.",
+            f"Max drawdown is {max_dd:.4f}, and fee rate is ~{fee_rate:.4f}%.",
+        ]
+        if corr_note:
+            parts.append(corr_note)
+        return " ".join(parts)
+
+    def _fetch_order_history_for_report(
+        self,
+        limit: int,
+        start_time: int,
+        end_time: int,
+        symbol: str | None,
+    ) -> list[dict]:
+        if not self.bybit_client and self.bybit_key and self.bybit_secret:
+            self.bybit_client = BybitAPIClient(
+                self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+            )
+        if not self.bybit_client:
+            return []
+        results: list[dict] = []
+        page_limit = min(200, max(1, limit))
+        max_range_ms = 7 * 24 * 60 * 60 * 1000
+        window_start = start_time
+        while len(results) < limit and window_start <= end_time:
+            window_end = min(end_time, window_start + max_range_ms - 1)
+            cursor: str | None = None
+            while len(results) < limit:
+                batch, cursor = self.bybit_client.fetch_order_history_page(
+                    limit=page_limit,
+                    symbol=symbol,
+                    start_time=window_start,
+                    end_time=window_end,
+                    cursor=cursor,
+                )
+                if not batch:
+                    break
+                results.extend(batch)
+                if not cursor:
+                    break
+            window_start = window_end + 1
+        return results[:limit]
+
+    def _generate_pdf_report(
+        self,
+        analysis: dict,
+        title: str,
+        lang: str,
+        params: dict,
+        fills: list[dict],
+        orders: list[dict],
+        charts: list[dict],
+    ) -> Path | None:
         try:
             from reportlab.lib.pagesizes import letter
-            from reportlab.pdfgen import canvas
+            from reportlab.lib import colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
         except Exception:
             return None
+
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         filename = f"report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
         path = REPORTS_DIR / filename
-        c = canvas.Canvas(str(path), pagesize=letter)
-        width, height = letter
-        y = height - 60
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(60, y, title)
-        y -= 30
-        c.setFont("Helvetica", 11)
-        for line in self._build_report_summary(analysis):
-            c.drawString(60, y, line)
-            y -= 18
-            if y < 80:
-                c.showPage()
-                y = height - 60
-        c.showPage()
-        c.save()
+
+        if lang == "zh":
+            try:
+                pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+                base_font = "STSong-Light"
+            except Exception:
+                base_font = "Helvetica"
+        else:
+            base_font = "Helvetica"
+
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(name="CoverTitle", fontName=base_font, fontSize=26, leading=30, alignment=1, spaceAfter=12))
+        styles.add(ParagraphStyle(name="CoverSub", fontName=base_font, fontSize=12, leading=16, alignment=1))
+        styles.add(ParagraphStyle(name="TitleX", fontName=base_font, fontSize=18, leading=22, spaceAfter=10))
+        styles.add(ParagraphStyle(name="HeadingX", fontName=base_font, fontSize=13, leading=16, spaceBefore=10, spaceAfter=6))
+        styles.add(ParagraphStyle(name="BodyX", fontName=base_font, fontSize=10.5, leading=14))
+        styles.add(ParagraphStyle(name="SmallX", fontName=base_font, fontSize=9, leading=12))
+
+        def _table(data: list[list], col_widths=None):
+            tbl = Table(data, colWidths=col_widths)
+            tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2b3a")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#c7d2e5")),
+                ("FONTNAME", (0, 0), (-1, -1), base_font),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+            return tbl
+
+        def _section_box(title_text: str, lines: list[str]):
+            if not lines:
+                lines = [("No data available." if lang == "en" else "暂无数据。")]
+            content = "<br/>".join([f"• {line}" for line in lines])
+            data = [
+                [Paragraph(title_text, styles["BodyX"])],
+                [Paragraph(content, styles["BodyX"])],
+            ]
+            tbl = Table(data, colWidths=[480])
+            tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#162334")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f6f8fb")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7d2e5")),
+                ("FONTNAME", (0, 0), (-1, -1), base_font),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]))
+            return tbl
+
+        def _fmt_num(val: float, digits: int = 4) -> str:
+            try:
+                return f"{float(val):.{digits}f}"
+            except Exception:
+                return "0"
+
+        def _fmt_pct(val: float, digits: int = 2) -> str:
+            try:
+                return f"{float(val) * 100:.{digits}f}%"
+            except Exception:
+                return "0%"
+
+        def _fmt_signed(val: float, digits: int = 4) -> str:
+            try:
+                v = float(val)
+            except Exception:
+                v = 0.0
+            sign = "+" if v > 0 else ""
+            return f"{sign}{v:.{digits}f}"
+
+        def _build_summary_advice(analysis: dict) -> tuple[list[str], list[str]]:
+            zh = lang == "zh"
+            summary: list[str] = []
+            advice: list[str] = []
+            basic = analysis.get("basic") or {}
+            perf = analysis.get("performance") or {}
+            mt = analysis.get("maker_taker") or {}
+            hourly = analysis.get("hourly_stats") or []
+            daily = analysis.get("daily_stats") or []
+            symbols = analysis.get("symbol_stats") or []
+
+            total_trades = basic.get("total_trades") or 0
+            if total_trades:
+                days_count = len(daily) if isinstance(daily, list) else 0
+                if days_count:
+                    summary.append(f"覆盖 {days_count} 天 / {total_trades} 笔交易" if zh else f"Coverage: {days_count} days / {total_trades} trades")
+                else:
+                    summary.append(f"交易数 {total_trades} 笔" if zh else f"Trades: {total_trades}")
+
+            total_vol = basic.get("total_volume") or 0
+            if total_vol:
+                summary.append(f"总成交量 {total_vol:.2f}" if zh else f"Total volume {total_vol:.2f}")
+
+            fee_rate = basic.get("fee_rate") or 0
+            if basic.get("total_fee") and total_vol:
+                summary.append((f"手续费占比 {_fmt_pct(fee_rate, 2)}" if zh else f"Fee ratio {_fmt_pct(fee_rate, 2)}"))
+                if fee_rate > 0.0004:
+                    advice.append(
+                        f"手续费占比 {_fmt_pct(fee_rate, 2)} 偏高，建议降低吃单比例或缩小高频交易时段。"
+                        if zh else f"Fee ratio {_fmt_pct(fee_rate, 2)} is high; reduce taker usage or narrow high-frequency windows."
+                    )
+
+            if symbols and total_vol:
+                top = max(symbols, key=lambda r: r.get("total_volume", 0))
+                share = (top.get("total_volume", 0) or 0) / (total_vol or 1)
+                summary.append(
+                    f"交易量集中在 {top.get('symbol') or '-'}（{_fmt_pct(share, 1)}）"
+                    if zh else f"Volume concentrated in {top.get('symbol') or '-'} ({_fmt_pct(share, 1)})"
+                )
+                if share >= 0.6:
+                    advice.append(
+                        f"{top.get('symbol') or '该品种'} 占比 {_fmt_pct(share, 1)}，集中度偏高，建议把单品种占比压到 50% 以下。"
+                        if zh else f"{top.get('symbol') or 'Top symbol'} share is {_fmt_pct(share, 1)}; reduce single-symbol exposure below 50%."
+                    )
+
+            if hourly:
+                buckets: dict[str, dict] = {}
+                for row in hourly:
+                    hour = str(row.get("hour") or "")
+                    parts = hour.split(" ")
+                    if len(parts) < 2:
+                        continue
+                    hour_label = parts[1].split(":")[0]
+                    if not hour_label:
+                        continue
+                    label = f"{hour_label}:00"
+                    buckets.setdefault(label, {"pnl": 0.0, "trades": 0})
+                    buckets[label]["pnl"] += float(row.get("hourly_pnl") or 0)
+                    buckets[label]["trades"] += int(row.get("trade_count") or 0)
+                min_trades = max(3, int((total_trades or 0) * 0.02))
+                bucket_list = [
+                    {"hour": k, "trades": v["trades"], "avg_pnl": (v["pnl"] / v["trades"] if v["trades"] else 0)}
+                    for k, v in buckets.items() if v["trades"] >= min_trades
+                ]
+                if len(bucket_list) >= 2:
+                    best = max(bucket_list, key=lambda b: b["avg_pnl"])
+                    worst = min(bucket_list, key=lambda b: b["avg_pnl"])
+                    summary.append(
+                        (f"时段分布：UTC {best['hour']} 平均盈亏 {_fmt_signed(best['avg_pnl'])}；UTC {worst['hour']} 平均盈亏 {_fmt_signed(worst['avg_pnl'])}"
+                         if zh else f"Time-of-day: UTC {best['hour']} avg {_fmt_signed(best['avg_pnl'])}; UTC {worst['hour']} avg {_fmt_signed(worst['avg_pnl'])}")
+                    )
+                    if best["avg_pnl"] > 0 and worst["avg_pnl"] < 0:
+                        advice.append(
+                            (f"减少 UTC {worst['hour']} 附近交易，优先 UTC {best['hour']} 时段（样本≥{min_trades} 笔）。"
+                             if zh else f"Reduce trading around UTC {worst['hour']}; prioritize UTC {best['hour']} (sample ≥ {min_trades}).")
+                        )
+
+            if (mt.get("taker_count") or 0) > (mt.get("maker_count") or 0) and (mt.get("taker_pnl") or 0) < 0:
+                advice.append(
+                    f"Taker 交易 {mt.get('taker_count', 0)} 笔且盈亏 {_fmt_signed(mt.get('taker_pnl', 0))}，建议降低吃单占比。"
+                    if zh else f"Taker trades {mt.get('taker_count', 0)} with PnL {_fmt_signed(mt.get('taker_pnl', 0))}; reduce taker usage."
+                )
+            if (mt.get("maker_count") or 0) > 0 and (mt.get("maker_pnl") or 0) < 0:
+                advice.append(
+                    f"Maker 盈亏 {_fmt_signed(mt.get('maker_pnl', 0))} 为负，检查挂单价格偏离或撤单过早。"
+                    if zh else f"Maker PnL {_fmt_signed(mt.get('maker_pnl', 0))} is negative; review maker pricing or early cancels."
+                )
+
+            if perf.get("win_rate") is not None and perf.get("profit_loss_ratio") is not None:
+                summary.append(
+                    f"胜率 {_fmt_pct(perf.get('win_rate', 0), 1)}，盈亏比 {float(perf.get('profit_loss_ratio') or 0):.2f}"
+                    if zh else f"Win rate {_fmt_pct(perf.get('win_rate', 0), 1)}, P/L {float(perf.get('profit_loss_ratio') or 0):.2f}"
+                )
+                if (perf.get("win_rate") or 0) < 0.45 and (perf.get("profit_loss_ratio") or 0) < 1:
+                    advice.append(
+                        f"胜率 {_fmt_pct(perf.get('win_rate', 0), 1)} 且盈亏比 {float(perf.get('profit_loss_ratio') or 0):.2f}，建议先缩小开仓频率并优化止损/止盈比例。"
+                        if zh else f"Win rate {_fmt_pct(perf.get('win_rate', 0), 1)} and P/L {float(perf.get('profit_loss_ratio') or 0):.2f}; reduce frequency and rebalance SL/TP."
+                    )
+            if perf.get("max_drawdown_pct") is not None:
+                dd = float(perf.get("max_drawdown_pct") or 0)
+                if dd < -10:
+                    advice.append(
+                        f"最大回撤 {dd:.2f}%，建议限制单笔风险并回测触发点。"
+                        if zh else f"Max drawdown {dd:.2f}%; tighten per-trade risk and review triggers."
+                    )
+            return summary, advice
+
+        def _make_chart_image(x_vals, y_vals, title_text, y_label):
+            try:
+                import matplotlib
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
+            except Exception:
+                return None
+            try:
+                fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=160)
+                ax.plot(x_vals, y_vals, color="#7cc4ff", linewidth=1.6)
+                ax.set_title(title_text, fontsize=10)
+                ax.set_ylabel(y_label, fontsize=9)
+                ax.grid(True, linestyle="--", alpha=0.25)
+                fig.tight_layout()
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", bbox_inches="tight")
+                plt.close(fig)
+                buf.seek(0)
+                return buf
+            except Exception:
+                return None
+
+        basic = analysis.get("basic") or {}
+        perf = analysis.get("performance") or {}
+        risk = analysis.get("risk") or {}
+        maker = analysis.get("maker_taker") or {}
+        day_of_week = analysis.get("day_of_week_stats") or []
+        session_stats = analysis.get("session_stats") or []
+        patterns = analysis.get("pattern_leaderboard") or []
+        correlations = analysis.get("time_correlations") or {}
+        daily_stats = analysis.get("daily_stats") or []
+        hourly_stats = analysis.get("hourly_stats") or []
+        hour_of_day_stats = analysis.get("hour_of_day_stats") or []
+        symbol_stats = analysis.get("symbol_stats") or []
+        inventory_hourly = analysis.get("inventory_hourly") or []
+        inventory_daily = analysis.get("inventory_daily") or []
+        inventory_weekly = analysis.get("inventory_weekly") or []
+
+        story: list = []
+        # Cover page
+        story.append(Paragraph(title, styles["CoverTitle"]))
+        cover_sub = params.get("subtitle") or (("Trading Analysis Report" if lang == "en" else "交易分析报告"))
+        story.append(Paragraph(cover_sub, styles["CoverSub"]))
+        story.append(Spacer(1, 20))
+        story.append(Paragraph(datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"), styles["CoverSub"]))
+        story.append(PageBreak())
+
+        story.append(Paragraph("Parameters" if lang == "en" else "参数", styles["HeadingX"]))
+        param_lines = []
+        for item in params.get("lines") or []:
+            param_lines.append(Paragraph(item, styles["BodyX"]))
+        if param_lines:
+            story.extend(param_lines)
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Executive Summary" if lang == "en" else "概要总结", styles["HeadingX"]))
+        for line in self._build_report_summary(analysis, lang):
+            story.append(Paragraph(line, styles["BodyX"]))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Reflection" if lang == "en" else "简要解读", styles["HeadingX"]))
+        story.append(Paragraph(self._build_reflection_paragraph(analysis, lang), styles["BodyX"]))
+        story.append(Spacer(1, 8))
+
+        summary_lines, advice_lines = _build_summary_advice(analysis)
+        story.append(Paragraph("Analysis Summary & Advice" if lang == "en" else "分析摘要与建议", styles["HeadingX"]))
+        story.append(_section_box("Summary" if lang == "en" else "摘要", summary_lines))
+        story.append(Spacer(1, 6))
+        story.append(_section_box("Advice" if lang == "en" else "建议", advice_lines))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Key Metrics" if lang == "en" else "关键指标", styles["HeadingX"]))
+        metrics_table = [
+            [
+                "Total Trades" if lang == "en" else "交易笔数",
+                "Net PnL" if lang == "en" else "净盈亏",
+                "Win Rate" if lang == "en" else "胜率",
+                "Profit/Loss" if lang == "en" else "盈亏比",
+                "Fee Rate" if lang == "en" else "手续费率",
+            ],
+            [
+                basic.get("total_trades", 0),
+                _fmt_num(basic.get("net_pnl", 0), 4),
+                _fmt_pct(perf.get("win_rate", 0), 2),
+                _fmt_num(perf.get("profit_loss_ratio", 0), 3),
+                _fmt_pct(basic.get("fee_rate", 0), 4),
+            ],
+        ]
+        story.append(_table(metrics_table))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Risk & Drawdown" if lang == "en" else "风险与回撤", styles["HeadingX"]))
+        risk_table = [
+            [
+                "Max Drawdown" if lang == "en" else "最大回撤",
+                "Max DD %" if lang == "en" else "最大回撤%",
+                "VaR" if lang == "en" else "VaR",
+                "CVaR" if lang == "en" else "CVaR",
+                "Volatility" if lang == "en" else "年化波动",
+            ],
+            [
+                _fmt_num(perf.get("max_drawdown", 0), 4),
+                _fmt_num(perf.get("max_drawdown_pct", 0), 2),
+                _fmt_num(risk.get("var_95", 0), 4),
+                _fmt_num(risk.get("cvar_95", 0), 4),
+                _fmt_num(risk.get("volatility_annualised", 0), 4),
+            ],
+        ]
+        story.append(_table(risk_table))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Maker / Taker" if lang == "en" else "做市/吃单", styles["HeadingX"]))
+        maker_table = [
+            [
+                "Maker Count" if lang == "en" else "做市笔数",
+                "Taker Count" if lang == "en" else "吃单笔数",
+                "Maker PnL" if lang == "en" else "做市盈亏",
+                "Taker PnL" if lang == "en" else "吃单盈亏",
+            ],
+            [
+                maker.get("maker_count", 0),
+                maker.get("taker_count", 0),
+                _fmt_num(maker.get("maker_pnl", 0), 4),
+                _fmt_num(maker.get("taker_pnl", 0), 4),
+            ],
+        ]
+        story.append(_table(maker_table))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Time Correlations" if lang == "en" else "时间相关性", styles["HeadingX"]))
+        corr_table = [
+            [
+                "Hour vs PnL" if lang == "en" else "小时 vs 盈亏",
+                "Trades vs PnL" if lang == "en" else "交易数 vs 盈亏",
+                "Notional vs PnL" if lang == "en" else "名义金额 vs 盈亏",
+            ],
+            [
+                _fmt_num(correlations.get("corr_hour_of_day_pnl", 0), 3),
+                _fmt_num(correlations.get("corr_tradecount_pnl", 0), 3),
+                _fmt_num(correlations.get("corr_volume_pnl", 0), 3),
+            ],
+        ]
+        story.append(_table(corr_table))
+        story.append(Spacer(1, 8))
+
+        # Seasonality/patterns removed for this version (tracked in WIP stash)
+
+        # Detailed time tables moved to annex
+
+        story.append(Paragraph("Symbol Performance" if lang == "en" else "按交易对表现", styles["HeadingX"]))
+        if symbol_stats:
+            sym_rows = [["Symbol" if lang == "en" else "交易对", "Trades" if lang == "en" else "交易数", "PnL" if lang == "en" else "盈亏", "Notional" if lang == "en" else "成交额", "Fee" if lang == "en" else "手续费"]]
+            for row in symbol_stats[:20]:
+                sym_rows.append([
+                    row.get("symbol") or "-",
+                    row.get("trade_count", 0),
+                    _fmt_num(row.get("total_pnl", 0), 4),
+                    _fmt_num(row.get("total_volume", 0), 2),
+                    _fmt_num(row.get("total_fee", 0), 4),
+                ])
+            story.append(_table(sym_rows))
+        else:
+            story.append(Paragraph("No symbol data available." if lang == "en" else "暂无交易对数据。", styles["BodyX"]))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Inventory (Summary)" if lang == "en" else "库存变化（摘要）", styles["HeadingX"]))
+        if inventory_daily:
+            inv_rows = [["Date" if lang == "en" else "日期", "Net Qty" if lang == "en" else "净数量", "Cumulative" if lang == "en" else "累计净数量"]]
+            for row in inventory_daily[-14:]:
+                inv_rows.append([
+                    row.get("date") or "-",
+                    _fmt_num(row.get("net_qty", 0), 4),
+                    _fmt_num(row.get("cumulative_net_qty", 0), 4),
+                ])
+            story.append(_table(inv_rows))
+        elif inventory_hourly:
+            inv_rows = [["Hour" if lang == "en" else "小时", "Net Qty" if lang == "en" else "净数量", "Cumulative" if lang == "en" else "累计净数量"]]
+            for row in inventory_hourly[-24:]:
+                inv_rows.append([
+                    row.get("hour") or "-",
+                    _fmt_num(row.get("net_qty", 0), 4),
+                    _fmt_num(row.get("cumulative_net_qty", 0), 4),
+                ])
+            story.append(_table(inv_rows))
+        else:
+            story.append(Paragraph("No inventory data available." if lang == "en" else "暂无库存数据。", styles["BodyX"]))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Charts" if lang == "en" else "图表", styles["HeadingX"]))
+        if daily_stats:
+            x_vals = list(range(len(daily_stats)))
+            y_vals = [float(row.get("daily_pnl") or 0) for row in daily_stats]
+            buf = _make_chart_image(x_vals, y_vals, "Daily PnL" if lang == "en" else "每日盈亏", "PnL")
+            if buf:
+                story.append(Image(buf))
+                story.append(Spacer(1, 6))
+        if hourly_stats:
+            recent = hourly_stats[-168:]
+            x_vals = list(range(len(recent)))
+            y_vals = [float(row.get("hourly_pnl") or 0) for row in recent]
+            buf = _make_chart_image(x_vals, y_vals, "Hourly PnL (last 168h)" if lang == "en" else "最近168小时盈亏", "PnL")
+            if buf:
+                story.append(Image(buf))
+                story.append(Spacer(1, 6))
+        if daily_stats:
+            cum = []
+            total = 0.0
+            for row in daily_stats:
+                total += float(row.get("daily_pnl") or 0)
+                cum.append(total)
+            x_vals = list(range(len(cum)))
+            buf = _make_chart_image(x_vals, cum, "Cumulative PnL" if lang == "en" else "累计盈亏", "PnL")
+            if buf:
+                story.append(Image(buf))
+                story.append(Spacer(1, 6))
+        story.append(Spacer(1, 10))
+
+        story.append(Paragraph("Annex: Raw Fills" if lang == "en" else "附录：成交明细", styles["HeadingX"]))
+        fill_rows = [["Time", "Symbol", "Side", "Qty", "Price", "Notional", "Fee", "PnL"]]
+        for row in fills[:200]:
+            ts = _normalize_ts(row.get("ts") or row.get("timestamp"))
+            dt = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "-"
+            fill_rows.append([
+                dt,
+                row.get("symbol", ""),
+                row.get("side", ""),
+                _fmt_num(row.get("qty", 0), 4),
+                _fmt_num(row.get("price", 0), 4),
+                _fmt_num(row.get("notional", 0), 2),
+                _fmt_num(row.get("fee", 0), 4),
+                _fmt_num(row.get("exec_pnl", 0), 4),
+            ])
+        story.append(_table(fill_rows, col_widths=[80, 55, 40, 45, 50, 60, 45, 45]))
+        if len(fills) > 200:
+            story.append(Paragraph(
+                f"Showing first 200 of {len(fills)} fills." if lang == "en" else f"仅展示前 200 条成交（共 {len(fills)} 条）。",
+                styles["SmallX"]
+            ))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Annex: Orders" if lang == "en" else "附录：订单明细", styles["HeadingX"]))
+        order_rows = [["OrderId", "Symbol", "Side", "Qty", "Price", "AvgPrice", "Status", "Updated"]]
+        for row in orders[:200]:
+            updated = row.get("updatedTime") or row.get("updated_time") or 0
+            updated_ts = "-"
+            try:
+                updated_ts = datetime.utcfromtimestamp(int(updated) / 1000).strftime("%Y-%m-%d %H:%M:%S") if updated else "-"
+            except Exception:
+                updated_ts = "-"
+            order_rows.append([
+                str(row.get("orderId") or row.get("order_id") or "")[:12],
+                row.get("symbol") or "",
+                row.get("side") or "",
+                _fmt_num(row.get("qty", 0), 4),
+                _fmt_num(row.get("price", 0), 4),
+                _fmt_num(row.get("avgPrice", 0), 4),
+                row.get("orderStatus") or row.get("orderStatus") or "",
+                updated_ts,
+            ])
+        story.append(_table(order_rows, col_widths=[70, 55, 40, 45, 45, 45, 55, 70]))
+        if len(orders) > 200:
+            story.append(Paragraph(
+                f"Showing first 200 of {len(orders)} orders." if lang == "en" else f"仅展示前 200 条订单（共 {len(orders)} 条）。",
+                styles["SmallX"]
+            ))
+
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Annex: Daily/Hourly Tables" if lang == "en" else "附录：日/小时明细", styles["HeadingX"]))
+        if daily_stats:
+            daily_rows = [["Date" if lang == "en" else "日期", "Trades" if lang == "en" else "交易数", "Notional" if lang == "en" else "成交额", "PnL" if lang == "en" else "盈亏"]]
+            for row in daily_stats[-60:]:
+                daily_rows.append([
+                    row.get("date") or "-",
+                    row.get("trade_count", 0),
+                    _fmt_num(row.get("daily_volume", 0), 2),
+                    _fmt_num(row.get("daily_pnl", 0), 4),
+                ])
+            story.append(_table(daily_rows))
+            story.append(Spacer(1, 6))
+        if hourly_stats:
+            hourly_rows = [["Hour" if lang == "en" else "小时", "Trades" if lang == "en" else "交易数", "Notional" if lang == "en" else "成交额", "PnL" if lang == "en" else "盈亏"]]
+            for row in hourly_stats[-168:]:
+                hourly_rows.append([
+                    row.get("hour") or "-",
+                    row.get("trade_count", 0),
+                    _fmt_num(row.get("hourly_volume", 0), 2),
+                    _fmt_num(row.get("hourly_pnl", 0), 4),
+                ])
+            story.append(_table(hourly_rows))
+
+        def _draw_header_footer(canvas, doc):
+            canvas.saveState()
+            canvas.setFont(base_font, 9)
+            canvas.setFillColor(colors.HexColor("#4b5563"))
+            header_title = title
+            canvas.drawString(36, doc.height + doc.topMargin + 6, header_title)
+            canvas.setStrokeColor(colors.HexColor("#e5e7eb"))
+            canvas.setLineWidth(0.5)
+            canvas.line(36, doc.height + doc.topMargin + 2, doc.width + 36, doc.height + doc.topMargin + 2)
+            footer_text = "ResTM (Beta)" if lang == "en" else "ResTM（Beta）"
+            canvas.drawString(36, 24, footer_text)
+            canvas.drawRightString(doc.width + 36, 24, f"{canvas.getPageNumber()}")
+            canvas.restoreState()
+
+        def _draw_cover(canvas, doc):
+            return
+
+        doc = SimpleDocTemplate(str(path), pagesize=letter, topMargin=48, bottomMargin=48, leftMargin=36, rightMargin=36)
+        doc.build(story, onFirstPage=_draw_cover, onLaterPages=_draw_header_footer)
         return path
 
     def _generate_pptx_report(self, analysis: dict, title: str) -> Path | None:
@@ -646,6 +1317,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             start = (query_params.get("start") or [""])[0]
             end = (query_params.get("end") or [""])[0]
             days = (query_params.get("days") or ["30"])[0]
+            lang = (query_params.get("lang") or ["en"])[0].lower()
             qp = {"days": [days], "symbol": [symbol]}
             if start:
                 qp["start"] = [start]
@@ -663,7 +1335,28 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 if not path:
                     return self._write_json({"ok": False, "error": "pptx generator not available"}, status=500)
                 return self._send_file(path, "application/vnd.openxmlformats-officedocument.presentationml.presentation")
-            path = self._generate_pdf_report(analysis, title)
+            fills, _ = self._get_analysis_fills(qp)
+            start_ms, end_ms = self._parse_date_range(qp)
+            if end_ms is None:
+                end_ms = int(time.time() * 1000)
+            if start_ms is None:
+                try:
+                    days_int = int(days or 30)
+                except Exception:
+                    days_int = 30
+                start_ms = end_ms - (days_int * 24 * 60 * 60 * 1000)
+            orders = self._fetch_order_history_for_report(5000, start_ms, end_ms, symbol or None)
+            params = {
+                "subtitle": "",
+                "lines": [
+                    f"Date range: {start or '-'} ~ {end or '-'}" if lang == "en" else f"日期范围：{start or '-'} ~ {end or '-'}",
+                    f"Days: {days}" if lang == "en" else f"天数：{days}",
+                    f"Symbol: {symbol or 'ALL'}" if lang == "en" else f"交易对：{symbol or '全部'}",
+                    f"Source: {self.mode}" if lang == "en" else f"来源：{self.mode}",
+                    f"Exchange: Bybit ({self.bybit_category})" if lang == "en" else f"交易所：Bybit（{self.bybit_category}）",
+                ],
+            }
+            path = self._generate_pdf_report(analysis, title, lang, params, fills, orders, [])
             if not path:
                 return self._write_json({"ok": False, "error": "pdf generator not available"}, status=500)
             return self._send_file(path, "application/pdf")
@@ -986,6 +1679,134 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             payload = json.loads(raw.decode("utf-8")) if raw else {}
         except Exception:
             return self._write_json({"ok": False, "error": "Invalid JSON body"}, status=400)
+
+        if self.path == "/api/admin/report":
+            if not self._admin_authorized({}):
+                return self._write_json({"ok": False, "error": "admin unauthorized"}, status=403)
+            try:
+                days = str(payload.get("days", "30")).strip() or "30"
+                symbol = str(payload.get("symbol", "")).strip()
+                start = str(payload.get("start", "")).strip()
+                end = str(payload.get("end", "")).strip()
+                fmt = str(payload.get("format", "pdf")).lower().strip() or "pdf"
+                lang = str(payload.get("lang", "en")).lower().strip() or "en"
+                source = str(payload.get("source", "")).strip()
+                limit = str(payload.get("limit", "")).strip()
+                charts = payload.get("charts") or []
+
+                qp = {"days": [days], "symbol": [symbol]}
+                if start:
+                    qp["start"] = [start]
+                if end:
+                    qp["end"] = [end]
+                if source:
+                    qp["source"] = [source]
+                if limit:
+                    qp["limit"] = [limit]
+
+                analysis = self._get_analysis(qp)
+                if not analysis:
+                    return self._write_json({"ok": False, "error": "analysis unavailable"}, status=502)
+
+                title = payload.get("title") or f"ResTM Report {datetime.utcnow().strftime('%Y-%m-%d')}"
+                if fmt == "pptx":
+                    path = self._generate_pptx_report(analysis, title)
+                    if not path:
+                        return self._write_json({"ok": False, "error": "pptx generator not available"}, status=500)
+                    return self._send_file(path, "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+                fills, _ = self._get_analysis_fills(qp)
+                start_ms, end_ms = self._parse_date_range(qp)
+                if end_ms is None:
+                    end_ms = int(time.time() * 1000)
+                if start_ms is None:
+                    try:
+                        days_int = int(days or 30)
+                    except Exception:
+                        days_int = 30
+                    start_ms = end_ms - (days_int * 24 * 60 * 60 * 1000)
+                order_limit = int(limit) if (limit and limit.isdigit()) else 5000
+                orders = self._fetch_order_history_for_report(order_limit, start_ms, end_ms, symbol or None)
+                params = {
+                    "subtitle": "",
+                    "lines": [
+                        f"Date range: {start or '-'} ~ {end or '-'}" if lang == "en" else f"日期范围：{start or '-'} ~ {end or '-'}",
+                        f"Days: {days}" if lang == "en" else f"天数：{days}",
+                        f"Symbol: {symbol or 'ALL'}" if lang == "en" else f"交易对：{symbol or '全部'}",
+                        f"Source: {source or self.mode}" if lang == "en" else f"来源：{source or self.mode}",
+                        f"Exchange: Bybit ({self.bybit_category})" if lang == "en" else f"交易所：Bybit（{self.bybit_category}）",
+                        f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}" if lang == "en" else f"生成时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                    ],
+                }
+                path = self._generate_pdf_report(analysis, title, lang, params, fills, orders, charts)
+                if not path:
+                    return self._write_json({"ok": False, "error": "pdf generator not available"}, status=500)
+                return self._send_file(path, "application/pdf")
+            except Exception as e:
+                return self._write_json({"ok": False, "error": f"report failed: {e}"}, status=500)
+
+        if self.path == "/api/admin/report/premium":
+            if not self._admin_authorized({}):
+                return self._write_json({"ok": False, "error": "admin unauthorized"}, status=403)
+            try:
+                if not generate_premium_report:
+                    return self._write_json({"ok": False, "error": "premium generator not available (install weasyprint)"}, status=500)
+                days = str(payload.get("days", "30")).strip() or "30"
+                symbol = str(payload.get("symbol", "")).strip()
+                start = str(payload.get("start", "")).strip()
+                end = str(payload.get("end", "")).strip()
+                lang = str(payload.get("lang", "en")).lower().strip() or "en"
+                source = str(payload.get("source", "")).strip() or "rest"
+                limit = str(payload.get("limit", "20000")).strip()
+                title = payload.get("title") or f"ResTM Premium Report {datetime.utcnow().strftime('%Y-%m-%d')}"
+
+                qp = {"days": [days], "symbol": [symbol], "source": [source], "limit": [limit]}
+                if start:
+                    qp["start"] = [start]
+                if end:
+                    qp["end"] = [end]
+
+                analysis = self._get_analysis(qp)
+                if not analysis:
+                    return self._write_json({"ok": False, "error": "analysis unavailable"}, status=502)
+
+                fills, _ = self._get_analysis_fills(qp)
+                start_ms, end_ms = self._parse_date_range(qp)
+                if end_ms is None:
+                    end_ms = int(time.time() * 1000)
+                if start_ms is None:
+                    try:
+                        days_int = int(days or 30)
+                    except Exception:
+                        days_int = 30
+                    start_ms = end_ms - (days_int * 24 * 60 * 60 * 1000)
+                order_limit = int(limit) if (limit and limit.isdigit()) else 5000
+                orders = self._fetch_order_history_for_report(order_limit, start_ms, end_ms, symbol or None)
+
+                period = f"{start or '-'} ~ {end or '-'}" if (start or end) else f"{days}d"
+                markout_path = LOGS_DIR / "execution_markout.jsonl"
+                try:
+                    out_pdf = generate_premium_report(
+                        analysis=analysis,
+                        fills=fills,
+                        orders=orders,
+                        lang=lang,
+                        title=title,
+                        period=period,
+                        markout_path=str(markout_path) if markout_path.exists() else None,
+                    )
+                except TypeError:
+                    out_pdf = generate_premium_report(
+                        analysis=analysis,
+                        fills=fills,
+                        orders=orders,
+                        lang=lang,
+                        title=title,
+                        period=period,
+                    )
+                return self._send_file(Path(out_pdf), "application/pdf")
+            except Exception as e:
+                return self._write_json({"ok": False, "error": f"premium report failed: {e}"}, status=500)
 
         if self.path == "/api/trading/config":
             api_key = str(payload.get("api_key", "")).strip()
@@ -1904,6 +2725,10 @@ def _start_realtime_websocket():
             else:
                 _realtime_data["fills"].append(fill)
             _realtime_data["last_update"] = time.time()
+        try:
+            _log_execution_markout(fill)
+        except Exception:
+            pass
     
     def on_position(pos_data: dict):
         symbol = pos_data.get("symbol", "")
@@ -1938,6 +2763,10 @@ def _start_realtime_websocket():
     ws_thread = threading.Thread(target=run_ws, daemon=True)
     ws_thread.start()
     TradeOptimizerHandler.ws_thread = ws_thread
+    global _markout_thread
+    if _markout_thread is None or not _markout_thread.is_alive():
+        _markout_thread = threading.Thread(target=_markout_worker, daemon=True)
+        _markout_thread.start()
     print("✅ Realtime WebSocket started in background thread")
 
 
@@ -1959,6 +2788,11 @@ def main():
 
     if not DASHBOARD_DIR.exists():
         raise SystemExit(f"Dashboard directory missing: {DASHBOARD_DIR}")
+
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"⚠️  Unable to create logs directory: {e}")
 
     # Start WebSocket for realtime mode
     if TradeOptimizerHandler.mode == "realtime":

@@ -11,3 +11,4 @@ Order_Histories/
 scripts/compare_bybit_csv.py
 admin_config.json
 reports/
+logs/

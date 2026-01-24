@@ -1151,6 +1151,9 @@
           <option value="zh">中文</option>
         </select>
       </label>
+      <label><span data-i18n="label_report_title">Report Title</span>
+        <input id="admin_report_title" type="text" placeholder="ResTM Premium Report">
+      </label>
       <button id="admin_generate" data-i18n="button_generate_report">Generate Report</button>
     </div>
     <div id="admin_status" class="muted" data-i18n="admin_hint">Generate a report for your account trading data.</div>
@@ -1511,6 +1514,7 @@
         label_format: 'Format',
         label_admin_token: 'Admin Token',
         label_report_lang: 'Report Language',
+        label_report_title: 'Report Title',
         help_section_api: 'API Key Setup',
         help_api_1: 'Use read-only keys for analysis/export. Trading requires keys with order permissions.',
         help_api_2: 'Keys are stored in memory for the session. Use .env if you prefer.',
@@ -1812,6 +1816,7 @@
         label_format: '格式',
         label_admin_token: '管理令牌',
         label_report_lang: '报表语言',
+        label_report_title: '报表标题',
         help_section_api: 'API 密钥设置',
         help_api_1: '分析/导出使用只读密钥；交易需要下单权限。',
         help_api_2: '密钥仅保存在本次会话内存中，可使用 .env。',
@@ -2887,10 +2892,10 @@
         const rows = basic.avg_entry_exit_by_symbol.map(row => `
           <tr>
             <td>${row.symbol || '-'}</td>
-            <td>${formatNumber(row.avg_buy_price, 4)}</td>
-            <td>${formatNumber(row.avg_sell_price, 4)}</td>
-            <td>${formatNumber(row.avg_buy_qty, 4)}</td>
-            <td>${formatNumber(row.avg_sell_qty, 4)}</td>
+            <td>${formatNumber(row.avg_entry_price, 4)}</td>
+            <td>${formatNumber(row.avg_exit_price, 4)}</td>
+            <td>${formatNumber(row.entry_qty, 4)}</td>
+            <td>${formatNumber(row.exit_qty, 4)}</td>
           </tr>
         `);
         html += `<table><thead><tr>
@@ -5064,6 +5069,7 @@
       const end = document.getElementById('admin_end')?.value || '';
       const format = document.getElementById('admin_format')?.value || 'pdf';
       const lang = document.getElementById('admin_report_lang')?.value || currentLang || 'en';
+      const title = (document.getElementById('admin_report_title')?.value || '').trim();
       const token = getAdminToken();
       const status = document.getElementById('admin_status');
       if (status) status.textContent = currentLang === 'zh' ? '正在生成报表...' : 'Generating report...';
@@ -5096,6 +5102,7 @@
       } catch (e) {}
       const charts = format === 'pdf' ? await collectReportCharts(16) : [];
       const payload = { days, symbol, start, end, format, lang, charts, source: 'rest', limit: '20000' };
+      if (title) payload.title = title;
       try {
         const endpoint = format === 'pdf' ? '/api/admin/report/premium' : '/api/admin/report';
         const res = await fetch(endpoint, {

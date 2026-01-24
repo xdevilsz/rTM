@@ -72,6 +72,107 @@ class TradeAnalyzer:
         df["drawdown_pct"] = (df["drawdown"] / df["running_max"].replace(0, 1)) * 100
         
         return df
+
+    def _compute_lifo_realized(self) -> Dict[str, Any]:
+        """Compute LIFO-matched realized entry/exit stats per symbol."""
+        if self.df.empty:
+            return {"by_symbol": [], "overall": {}}
+        results = []
+        overall_entry_notional = 0.0
+        overall_exit_notional = 0.0
+        overall_entry_qty = 0.0
+        overall_exit_qty = 0.0
+        overall_wins = 0
+        overall_total = 0
+
+        for sym in sorted(self.df["symbol"].dropna().unique().tolist()):
+            sdf = self.df[self.df["symbol"] == sym].copy()
+            if sdf.empty:
+                continue
+            stacks: list[dict] = []
+            entry_notional = 0.0
+            exit_notional = 0.0
+            entry_qty = 0.0
+            exit_qty = 0.0
+            wins = 0
+            total = 0
+
+            for _, row in sdf.iterrows():
+                side = row.get("side_norm") or ""
+                price = float(row.get("price") or 0)
+                qty = float(row.get("qty") or 0)
+                if qty <= 0 or not side or not price:
+                    continue
+                remaining = qty
+                # Determine if this fill closes existing inventory (LIFO)
+                while remaining > 0 and stacks and stacks[-1]["side"] != side:
+                    lot = stacks.pop()
+                    lot_qty = lot["qty"]
+                    match_qty = min(remaining, lot_qty)
+                    # Determine entry/exit based on lot side
+                    if lot["side"] == "buy" and side == "sell":
+                        entry_price = lot["price"]
+                        exit_price = price
+                        is_win = exit_price > entry_price
+                    elif lot["side"] == "sell" and side == "buy":
+                        entry_price = lot["price"]
+                        exit_price = price
+                        is_win = exit_price < entry_price
+                    else:
+                        entry_price = lot["price"]
+                        exit_price = price
+                        is_win = False
+
+                    entry_notional += entry_price * match_qty
+                    exit_notional += exit_price * match_qty
+                    entry_qty += match_qty
+                    exit_qty += match_qty
+                    total += 1
+                    if is_win:
+                        wins += 1
+
+                    remaining -= match_qty
+                    leftover = lot_qty - match_qty
+                    if leftover > 0:
+                        lot["qty"] = leftover
+                        stacks.append(lot)
+
+                if remaining > 0:
+                    stacks.append({"side": side, "qty": remaining, "price": price})
+
+            avg_entry_price = (entry_notional / entry_qty) if entry_qty > 0 else None
+            avg_exit_price = (exit_notional / exit_qty) if exit_qty > 0 else None
+
+            results.append({
+                "symbol": sym,
+                "avg_entry_price": avg_entry_price,
+                "avg_exit_price": avg_exit_price,
+                "entry_qty": entry_qty,
+                "exit_qty": exit_qty,
+                "entry_notional": entry_notional,
+                "exit_notional": exit_notional,
+                "win_count": wins,
+                "win_total": total,
+            })
+
+            overall_entry_notional += entry_notional
+            overall_exit_notional += exit_notional
+            overall_entry_qty += entry_qty
+            overall_exit_qty += exit_qty
+            overall_wins += wins
+            overall_total += total
+
+        overall = {
+            "avg_entry_price": (overall_entry_notional / overall_entry_qty) if overall_entry_qty > 0 else None,
+            "avg_exit_price": (overall_exit_notional / overall_exit_qty) if overall_exit_qty > 0 else None,
+            "entry_qty": overall_entry_qty,
+            "exit_qty": overall_exit_qty,
+            "entry_notional": overall_entry_notional,
+            "exit_notional": overall_exit_notional,
+            "win_count": overall_wins,
+            "win_total": overall_total,
+        }
+        return {"by_symbol": results, "overall": overall}
     
     def get_basic_statistics(self) -> Dict[str, Any]:
         """Get basic trading statistics"""
@@ -90,35 +191,29 @@ class TradeAnalyzer:
         time_span = (self.df["timestamp"].max() - self.df["timestamp"].min()).total_seconds() / 3600
         trade_frequency = len(self.df) / time_span if time_span > 0 else 0
         
-        # Per-symbol averages to preserve symbol integrity
+        lifo_stats = self._compute_lifo_realized()
         symbol_avgs = []
-        if "symbol" in self.df.columns:
-            for sym in sorted(self.df["symbol"].dropna().unique().tolist()):
-                sdf = self.df[self.df["symbol"] == sym]
-                if sdf.empty:
-                    continue
-                sbuy = sdf[sdf["side_norm"] == "buy"]
-                ssell = sdf[sdf["side_norm"] == "sell"]
-                symbol_avgs.append({
-                    "symbol": sym,
-                    "avg_buy_price": float(sbuy["price"].mean()) if len(sbuy) > 0 else None,
-                    "avg_sell_price": float(ssell["price"].mean()) if len(ssell) > 0 else None,
-                    "avg_buy_qty": float(sbuy["qty"].mean()) if len(sbuy) > 0 else None,
-                    "avg_sell_qty": float(ssell["qty"].mean()) if len(ssell) > 0 else None,
-                    "avg_buy_notional": float(sbuy["notional"].mean()) if len(sbuy) > 0 else None,
-                    "avg_sell_notional": float(ssell["notional"].mean()) if len(ssell) > 0 else None,
-                    "avg_buy_fee": float(sbuy["fee"].mean()) if len(sbuy) > 0 else None,
-                    "avg_sell_fee": float(ssell["fee"].mean()) if len(ssell) > 0 else None,
-                })
+        for row in lifo_stats["by_symbol"]:
+            symbol_avgs.append({
+                "symbol": row["symbol"],
+                "avg_entry_price": row["avg_entry_price"],
+                "avg_exit_price": row["avg_exit_price"],
+                "entry_qty": row["entry_qty"],
+                "exit_qty": row["exit_qty"],
+                "entry_notional": row["entry_notional"],
+                "exit_notional": row["exit_notional"],
+                "win_count": row["win_count"],
+                "win_total": row["win_total"],
+            })
 
-        # Avoid mixing symbols when more than one symbol exists
         multiple_symbols = len(symbol_avgs) > 1
-        avg_buy_price = None if multiple_symbols else (float(buy_trades["price"].mean()) if len(buy_trades) > 0 else None)
-        avg_sell_price = None if multiple_symbols else (float(sell_trades["price"].mean()) if len(sell_trades) > 0 else None)
-        avg_buy_qty = None if multiple_symbols else (float(buy_trades["qty"].mean()) if len(buy_trades) > 0 else None)
-        avg_sell_qty = None if multiple_symbols else (float(sell_trades["qty"].mean()) if len(sell_trades) > 0 else None)
-        avg_buy_notional = None if multiple_symbols else (float(buy_trades["notional"].mean()) if len(buy_trades) > 0 else None)
-        avg_sell_notional = None if multiple_symbols else (float(sell_trades["notional"].mean()) if len(sell_trades) > 0 else None)
+        overall = lifo_stats["overall"]
+        avg_buy_price = None if multiple_symbols else overall.get("avg_entry_price")
+        avg_sell_price = None if multiple_symbols else overall.get("avg_exit_price")
+        avg_buy_qty = None if multiple_symbols else overall.get("entry_qty")
+        avg_sell_qty = None if multiple_symbols else overall.get("exit_qty")
+        avg_buy_notional = None if multiple_symbols else overall.get("entry_notional")
+        avg_sell_notional = None if multiple_symbols else overall.get("exit_notional")
         avg_buy_fee = None if multiple_symbols else (float(buy_trades["fee"].mean()) if len(buy_trades) > 0 else None)
         avg_sell_fee = None if multiple_symbols else (float(sell_trades["fee"].mean()) if len(sell_trades) > 0 else None)
 
@@ -161,35 +256,10 @@ class TradeAnalyzer:
         total_trades = len(returns)
         win_rate = len(win_trades) / total_trades if total_trades > 0 else 0
 
-        # Execution-based win rate: compare exits vs average entry per symbol
-        exec_wins = 0
-        exec_total = 0
-        if "symbol" in self.df.columns:
-            sym_avg = {}
-            for sym in self.df["symbol"].dropna().unique().tolist():
-                sdf = self.df[self.df["symbol"] == sym]
-                sbuy = sdf[sdf["side_norm"] == "buy"]
-                ssell = sdf[sdf["side_norm"] == "sell"]
-                sym_avg[sym] = {
-                    "avg_buy_price": float(sbuy["price"].mean()) if len(sbuy) > 0 else None,
-                    "avg_sell_price": float(ssell["price"].mean()) if len(ssell) > 0 else None,
-                }
-            for _, row in self.df.iterrows():
-                sym = row.get("symbol") or ""
-                if not sym or sym not in sym_avg:
-                    continue
-                price = float(row.get("price") or 0)
-                side = row.get("side_norm") or ""
-                avg_buy = sym_avg[sym]["avg_buy_price"]
-                avg_sell = sym_avg[sym]["avg_sell_price"]
-                if side == "sell" and avg_buy:
-                    exec_total += 1
-                    if price > avg_buy:
-                        exec_wins += 1
-                elif side == "buy" and avg_sell:
-                    exec_total += 1
-                    if price < avg_sell:
-                        exec_wins += 1
+        # LIFO realized win rate (exclude excess inventory)
+        lifo_stats = self._compute_lifo_realized()
+        exec_total = lifo_stats["overall"].get("win_total") or 0
+        exec_wins = lifo_stats["overall"].get("win_count") or 0
         if exec_total > 0:
             win_rate = exec_wins / exec_total
         avg_win = float(win_trades.mean()) if len(win_trades) > 0 else 0
@@ -221,7 +291,7 @@ class TradeAnalyzer:
         
         return {
             "win_rate": win_rate,
-            "win_rate_method": "execution_vs_avg_entry",
+            "win_rate_method": "lifo_realized",
             "execution_win_total": exec_total,
             "execution_win_count": exec_wins,
             "profit_loss_ratio": profit_loss_ratio,

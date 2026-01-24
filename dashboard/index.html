@@ -2826,10 +2826,10 @@
         const rows = basic.avg_entry_exit_by_symbol.map(row => `
           <tr>
             <td>${row.symbol || '-'}</td>
-            <td>${formatNumber(row.avg_buy_price, 4)}</td>
-            <td>${formatNumber(row.avg_sell_price, 4)}</td>
-            <td>${formatNumber(row.avg_buy_qty, 4)}</td>
-            <td>${formatNumber(row.avg_sell_qty, 4)}</td>
+            <td>${formatNumber(row.avg_entry_price, 4)}</td>
+            <td>${formatNumber(row.avg_exit_price, 4)}</td>
+            <td>${formatNumber(row.entry_qty, 4)}</td>
+            <td>${formatNumber(row.exit_qty, 4)}</td>
           </tr>
         `);
         html += `<table><thead><tr>

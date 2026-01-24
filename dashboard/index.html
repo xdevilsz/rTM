@@ -2810,7 +2810,8 @@
         html += `<div class="card"><div class="label">${t('analysis_label_total_fee')}</div><div class="value">${(basic.total_fee || 0).toFixed(4)}</div></div>`;
         html += '</div>';
 
-        html += `<h3>${t('analysis_heading_entry_exit')}</h3>`;
+      html += `<h3>${t('analysis_heading_entry_exit')}</h3>`;
+      if (basic.avg_buy_price !== null && basic.avg_buy_price !== undefined) {
         html += '<div class="row">';
         html += `<div class="card"><div class="label">${t('analysis_label_avg_entry_price')}</div><div class="value">${formatNumber(basic.avg_buy_price, 4)}</div></div>`;
         html += `<div class="card"><div class="label">${t('analysis_label_avg_exit_price')}</div><div class="value">${formatNumber(basic.avg_sell_price, 4)}</div></div>`;
@@ -2821,6 +2822,24 @@
         html += `<div class="card"><div class="label">${t('analysis_label_avg_entry_fee')}</div><div class="value">${formatNumber(basic.avg_buy_fee, 6)}</div></div>`;
         html += `<div class="card"><div class="label">${t('analysis_label_avg_exit_fee')}</div><div class="value">${formatNumber(basic.avg_sell_fee, 6)}</div></div>`;
         html += '</div>';
+      } else if (Array.isArray(basic.avg_entry_exit_by_symbol) && basic.avg_entry_exit_by_symbol.length) {
+        const rows = basic.avg_entry_exit_by_symbol.map(row => `
+          <tr>
+            <td>${row.symbol || '-'}</td>
+            <td>${formatNumber(row.avg_buy_price, 4)}</td>
+            <td>${formatNumber(row.avg_sell_price, 4)}</td>
+            <td>${formatNumber(row.avg_buy_qty, 4)}</td>
+            <td>${formatNumber(row.avg_sell_qty, 4)}</td>
+          </tr>
+        `);
+        html += `<table><thead><tr>
+          <th>${t('th_symbol')}</th>
+          <th>${t('analysis_label_avg_entry_price')}</th>
+          <th>${t('analysis_label_avg_exit_price')}</th>
+          <th>${t('analysis_label_avg_entry_qty')}</th>
+          <th>${t('analysis_label_avg_exit_qty')}</th>
+        </tr></thead><tbody>${rows.join('')}</tbody></table>`;
+      }
       }
 
       if (Array.isArray(data.symbol_stats) && data.symbol_stats.length > 0) {

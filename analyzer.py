@@ -90,6 +90,38 @@ class TradeAnalyzer:
         time_span = (self.df["timestamp"].max() - self.df["timestamp"].min()).total_seconds() / 3600
         trade_frequency = len(self.df) / time_span if time_span > 0 else 0
         
+        # Per-symbol averages to preserve symbol integrity
+        symbol_avgs = []
+        if "symbol" in self.df.columns:
+            for sym in sorted(self.df["symbol"].dropna().unique().tolist()):
+                sdf = self.df[self.df["symbol"] == sym]
+                if sdf.empty:
+                    continue
+                sbuy = sdf[sdf["side_norm"] == "buy"]
+                ssell = sdf[sdf["side_norm"] == "sell"]
+                symbol_avgs.append({
+                    "symbol": sym,
+                    "avg_buy_price": float(sbuy["price"].mean()) if len(sbuy) > 0 else None,
+                    "avg_sell_price": float(ssell["price"].mean()) if len(ssell) > 0 else None,
+                    "avg_buy_qty": float(sbuy["qty"].mean()) if len(sbuy) > 0 else None,
+                    "avg_sell_qty": float(ssell["qty"].mean()) if len(ssell) > 0 else None,
+                    "avg_buy_notional": float(sbuy["notional"].mean()) if len(sbuy) > 0 else None,
+                    "avg_sell_notional": float(ssell["notional"].mean()) if len(ssell) > 0 else None,
+                    "avg_buy_fee": float(sbuy["fee"].mean()) if len(sbuy) > 0 else None,
+                    "avg_sell_fee": float(ssell["fee"].mean()) if len(ssell) > 0 else None,
+                })
+
+        # Avoid mixing symbols when more than one symbol exists
+        multiple_symbols = len(symbol_avgs) > 1
+        avg_buy_price = None if multiple_symbols else (float(buy_trades["price"].mean()) if len(buy_trades) > 0 else None)
+        avg_sell_price = None if multiple_symbols else (float(sell_trades["price"].mean()) if len(sell_trades) > 0 else None)
+        avg_buy_qty = None if multiple_symbols else (float(buy_trades["qty"].mean()) if len(buy_trades) > 0 else None)
+        avg_sell_qty = None if multiple_symbols else (float(sell_trades["qty"].mean()) if len(sell_trades) > 0 else None)
+        avg_buy_notional = None if multiple_symbols else (float(buy_trades["notional"].mean()) if len(buy_trades) > 0 else None)
+        avg_sell_notional = None if multiple_symbols else (float(sell_trades["notional"].mean()) if len(sell_trades) > 0 else None)
+        avg_buy_fee = None if multiple_symbols else (float(buy_trades["fee"].mean()) if len(buy_trades) > 0 else None)
+        avg_sell_fee = None if multiple_symbols else (float(sell_trades["fee"].mean()) if len(sell_trades) > 0 else None)
+
         return {
             "total_trades": len(self.df),
             "buy_count": len(buy_trades),
@@ -103,14 +135,15 @@ class TradeAnalyzer:
             "fee_rate": total_fee / total_volume if total_volume > 0 else 0,
             "profit_rate": net_pnl / total_volume if total_volume > 0 else 0,
             "trade_frequency_per_hour": trade_frequency,
-            "avg_buy_price": float(buy_trades["price"].mean()) if len(buy_trades) > 0 else None,
-            "avg_sell_price": float(sell_trades["price"].mean()) if len(sell_trades) > 0 else None,
-            "avg_buy_qty": float(buy_trades["qty"].mean()) if len(buy_trades) > 0 else None,
-            "avg_sell_qty": float(sell_trades["qty"].mean()) if len(sell_trades) > 0 else None,
-            "avg_buy_notional": float(buy_trades["notional"].mean()) if len(buy_trades) > 0 else None,
-            "avg_sell_notional": float(sell_trades["notional"].mean()) if len(sell_trades) > 0 else None,
-            "avg_buy_fee": float(buy_trades["fee"].mean()) if len(buy_trades) > 0 else None,
-            "avg_sell_fee": float(sell_trades["fee"].mean()) if len(sell_trades) > 0 else None,
+            "avg_buy_price": avg_buy_price,
+            "avg_sell_price": avg_sell_price,
+            "avg_buy_qty": avg_buy_qty,
+            "avg_sell_qty": avg_sell_qty,
+            "avg_buy_notional": avg_buy_notional,
+            "avg_sell_notional": avg_sell_notional,
+            "avg_buy_fee": avg_buy_fee,
+            "avg_sell_fee": avg_sell_fee,
+            "avg_entry_exit_by_symbol": symbol_avgs,
             "symbols": list(self.df["symbol"].unique()),
         }
     
@@ -127,6 +160,38 @@ class TradeAnalyzer:
         loss_trades = returns[returns < 0]
         total_trades = len(returns)
         win_rate = len(win_trades) / total_trades if total_trades > 0 else 0
+
+        # Execution-based win rate: compare exits vs average entry per symbol
+        exec_wins = 0
+        exec_total = 0
+        if "symbol" in self.df.columns:
+            sym_avg = {}
+            for sym in self.df["symbol"].dropna().unique().tolist():
+                sdf = self.df[self.df["symbol"] == sym]
+                sbuy = sdf[sdf["side_norm"] == "buy"]
+                ssell = sdf[sdf["side_norm"] == "sell"]
+                sym_avg[sym] = {
+                    "avg_buy_price": float(sbuy["price"].mean()) if len(sbuy) > 0 else None,
+                    "avg_sell_price": float(ssell["price"].mean()) if len(ssell) > 0 else None,
+                }
+            for _, row in self.df.iterrows():
+                sym = row.get("symbol") or ""
+                if not sym or sym not in sym_avg:
+                    continue
+                price = float(row.get("price") or 0)
+                side = row.get("side_norm") or ""
+                avg_buy = sym_avg[sym]["avg_buy_price"]
+                avg_sell = sym_avg[sym]["avg_sell_price"]
+                if side == "sell" and avg_buy:
+                    exec_total += 1
+                    if price > avg_buy:
+                        exec_wins += 1
+                elif side == "buy" and avg_sell:
+                    exec_total += 1
+                    if price < avg_sell:
+                        exec_wins += 1
+        if exec_total > 0:
+            win_rate = exec_wins / exec_total
         avg_win = float(win_trades.mean()) if len(win_trades) > 0 else 0
         avg_loss = float(loss_trades.mean()) if len(loss_trades) > 0 else 0
         profit_loss_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else float("inf")
@@ -156,6 +221,9 @@ class TradeAnalyzer:
         
         return {
             "win_rate": win_rate,
+            "win_rate_method": "execution_vs_avg_entry",
+            "execution_win_total": exec_total,
+            "execution_win_count": exec_wins,
             "profit_loss_ratio": profit_loss_ratio,
             "avg_win": avg_win,
             "avg_loss": avg_loss,

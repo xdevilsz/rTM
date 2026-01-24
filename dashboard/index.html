@@ -43,6 +43,7 @@
       color: var(--text);
     }
     .muted { color: var(--muted); }
+    .note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
     .row { display: flex; gap: 14px; flex-wrap: wrap; }
     .card {
       background: linear-gradient(135deg, rgba(30, 40, 56, 0.7), rgba(19, 28, 40, 0.92));
@@ -893,11 +894,24 @@
       <label><span data-i18n="label_end_date">End</span>
         <input id="analysis_end" type="date">
       </label>
+      <label><span data-i18n="label_options_greeks">Options Greeks</span>
+        <select id="options_greeks_source">
+          <option value="bs" data-i18n="options_greeks_model">Model (BS)</option>
+          <option value="bybit" data-i18n="options_greeks_bybit">Bybit Greeks</option>
+        </select>
+      </label>
+      <label><span data-i18n="label_options_symbol">Options Symbol</span>
+        <select id="options_symbol">
+          <option value="BTCUSDT">BTCUSDT</option>
+          <option value="ETHUSDT">ETHUSDT</option>
+        </select>
+      </label>
       <button id="refresh_analysis" data-i18n="button_refresh_analysis">Generate Analysis</button>
       <button id="export_analysis" data-i18n="button_export_analysis">Export Analysis</button>
       <button id="export_analysis_fills" data-i18n="button_export_fills">Export Fills</button>
       <button id="export_order_history" data-i18n="button_export_orders">Export Orders</button>
       <button id="compare_sources" data-i18n="button_compare_sources">Compare Sources</button>
+      <button id="options_use_bybit" data-i18n="button_options_use_bybit">Use Bybit Greeks</button>
     </div>
     <div id="analysis_loading" class="analysis-loading">
       <div class="analysis-loading-bar"></div>
@@ -1374,6 +1388,10 @@
         analysis_performance: 'Performance Metrics',
         analysis_risk: 'Risk Metrics',
         analysis_maker_taker: 'Maker/Taker Breakdown',
+        label_options_greeks: 'Options Greeks',
+        options_greeks_model: 'Model (BS)',
+        options_greeks_bybit: 'Bybit Greeks',
+        label_options_symbol: 'Options Symbol',
         label_timeframe: 'Timeframe',
         tf_1d: '1 Day',
         tf_7d: '7 Days',
@@ -1391,6 +1409,7 @@
         button_export_fills: 'Export Fills',
         button_export_orders: 'Export Orders',
         button_compare_sources: 'Compare Sources',
+        button_options_use_bybit: 'Use Bybit Greeks',
         analysis_hint: 'Click "Generate Analysis" to load comprehensive trade analysis.',
         advanced_analysis_hint: 'Click "Generate Advanced Analysis" to explore time-based performance.',
         analysis_heading_entry_exit: 'Average Entry / Exit',
@@ -1408,6 +1427,10 @@
         analysis_label_theta: 'Theta',
         analysis_label_vega: 'Vega',
         analysis_label_iv_pnl: 'IV Shock PnL',
+        options_greeks_source_model: 'Source: Model (BS)',
+        options_greeks_source_bybit: 'Source: Bybit Greeks',
+        options_greeks_note_bybit: 'Bybit greeks may include linear delta.',
+        options_greeks_no_data: 'No options greeks for selected symbol.',
         advanced_heading_time_correlation: 'Time vs PnL Correlation',
         advanced_label_corr_hour_pnl: 'Hour-of-Day vs PnL',
         advanced_label_corr_tradecount_pnl: 'Trade Count vs PnL',
@@ -1674,6 +1697,10 @@
         analysis_performance: '绩效指标',
         analysis_risk: '风险指标',
         analysis_maker_taker: 'Maker/Taker 分析',
+        label_options_greeks: '期权希腊值',
+        options_greeks_model: '模型 (BS)',
+        options_greeks_bybit: 'Bybit 希腊值',
+        label_options_symbol: '期权标的',
         label_timeframe: '时间范围',
         tf_1d: '1 天',
         tf_7d: '7 天',
@@ -1691,6 +1718,7 @@
         button_export_fills: '导出逐笔',
         button_export_orders: '导出订单',
         button_compare_sources: '来源对比',
+        button_options_use_bybit: '使用 Bybit 希腊值',
         analysis_hint: '点击“生成分析”加载完整交易分析。',
         advanced_analysis_hint: '点击“生成高级分析”查看时间维度表现。',
         analysis_heading_entry_exit: '平均进出场',
@@ -1708,6 +1736,10 @@
         analysis_label_theta: 'Theta',
         analysis_label_vega: 'Vega',
         analysis_label_iv_pnl: 'IV 冲击盈亏',
+        options_greeks_source_model: '来源：模型 (BS)',
+        options_greeks_source_bybit: '来源：Bybit 希腊值',
+        options_greeks_note_bybit: 'Bybit 希腊值可能包含线性头寸的 Delta。',
+        options_greeks_no_data: '当前标的无期权希腊值数据。',
         advanced_heading_time_correlation: '交易时间 vs 盈亏相关',
         advanced_label_corr_hour_pnl: '小时段 vs 盈亏',
         advanced_label_corr_tradecount_pnl: '交易频次 vs 盈亏',
@@ -2429,6 +2461,42 @@
       }
     }
 
+    function getOptionsGreeksSource() {
+      const el = document.getElementById('options_greeks_source');
+      return (el && el.value) ? el.value : 'bs';
+    }
+
+    function normalizeUnderlyingSymbol(symbol) {
+      const raw = (symbol || '').toUpperCase();
+      if (raw.includes('BTC')) return 'BTC';
+      if (raw.includes('ETH')) return 'ETH';
+      return '';
+    }
+
+    function getOptionsSectionUnderlying() {
+      const analysisSymbol = getAnalysisSymbol();
+      if (analysisSymbol) {
+        return normalizeUnderlyingSymbol(analysisSymbol);
+      }
+      const optionsSymbol = document.getElementById('options_symbol')?.value || '';
+      return normalizeUnderlyingSymbol(optionsSymbol);
+    }
+
+    async function fetchOptionsReport() {
+      try {
+        const source = getOptionsGreeksSource();
+        const optRes = await fetch(`/api/options/report?settle=USDT&iv_btc=0.44&iv_eth=0.65&iv_shock=0.0&source=${encodeURIComponent(source)}`, { cache: 'no-store' });
+        if (optRes.ok) {
+          const optJson = await optRes.json();
+          state.analysisOptions = optJson.ok ? optJson.report : null;
+        } else {
+          state.analysisOptions = null;
+        }
+      } catch (e) {
+        state.analysisOptions = null;
+      }
+    }
+
     async function fetchAnalysis() {
       setAnalysisLoading(true);
       try {
@@ -2464,17 +2532,7 @@
         }
         state.analysisData = data;
         state.analysisMode = mode;
-        try {
-          const optRes = await fetch(`/api/options/report?settle=USDT&iv_btc=0.44&iv_eth=0.65&iv_shock=0.0`, { cache: 'no-store' });
-          if (optRes.ok) {
-            const optJson = await optRes.json();
-            state.analysisOptions = optJson.ok ? optJson.report : null;
-          } else {
-            state.analysisOptions = null;
-          }
-        } catch (e) {
-          state.analysisOptions = null;
-        }
+        await fetchOptionsReport();
         renderAnalysis(data, mode);
       } catch (e) {
         console.error('Analysis fetch error:', e);
@@ -2867,13 +2925,50 @@
       if (state.analysisOptions) {
         const opt = state.analysisOptions;
         html += `<h3>${t('analysis_heading_options')}</h3>`;
+        const sourceNote = opt.source === 'bybit'
+          ? t('options_greeks_source_bybit')
+          : t('options_greeks_source_model');
+        const bybitNote = opt.source === 'bybit'
+          ? (currentLang === 'zh' ? t('options_greeks_note_bybit') : (opt.note || t('options_greeks_note_bybit')))
+          : '';
+        html += `<div class="note">${sourceNote}${bybitNote ? ` · ${bybitNote}` : ''}</div>`;
+        const underlying = getOptionsSectionUnderlying();
+        const totalsByUnderlying = opt.totals_by_underlying || {};
+        const selectedTotals = underlying ? totalsByUnderlying[underlying] : null;
+        const totals = selectedTotals || (underlying ? null : (opt.total || {}));
         html += '<div class="row">';
-        html += `<div class="card"><div class="label">${t('analysis_label_delta')}</div><div class="value">${formatNumber(opt.total?.delta || 0, 4)}</div></div>`;
-        html += `<div class="card"><div class="label">${t('analysis_label_gamma')}</div><div class="value">${formatNumber(opt.total?.gamma || 0, 6)}</div></div>`;
-        html += `<div class="card"><div class="label">${t('analysis_label_theta')}</div><div class="value">${formatNumber(opt.total?.theta || 0, 6)}</div></div>`;
-        html += `<div class="card"><div class="label">${t('analysis_label_vega')}</div><div class="value">${formatNumber(opt.total?.vega || 0, 6)}</div></div>`;
-        html += `<div class="card"><div class="label">${t('analysis_label_iv_pnl')}</div><div class="value">${formatNumber(opt.total?.pnl_reprice || 0, 4)}</div></div>`;
+        if (totals) {
+          html += `<div class="card"><div class="label">${t('analysis_label_delta')}</div><div class="value">${formatNumber(totals.delta || 0, 4)}</div></div>`;
+          html += `<div class="card"><div class="label">${t('analysis_label_gamma')}</div><div class="value">${formatNumber(totals.gamma || 0, 6)}</div></div>`;
+          html += `<div class="card"><div class="label">${t('analysis_label_theta')}</div><div class="value">${formatNumber(totals.theta || 0, 6)}</div></div>`;
+          html += `<div class="card"><div class="label">${t('analysis_label_vega')}</div><div class="value">${formatNumber(totals.vega || 0, 6)}</div></div>`;
+          html += `<div class="card"><div class="label">${t('analysis_label_iv_pnl')}</div><div class="value">${formatNumber(totals.pnl_reprice || 0, 4)}</div></div>`;
+        } else {
+          html += `<div class="muted">${t('options_greeks_no_data')}</div>`;
+        }
         html += '</div>';
+        if (opt.totals_by_underlying) {
+          const rows = Object.entries(opt.totals_by_underlying).map(([sym, totals]) => `
+            <tr>
+              <td>${sym}</td>
+              <td>${formatNumber(totals.delta || 0, 4)}</td>
+              <td>${formatNumber(totals.gamma || 0, 6)}</td>
+              <td>${formatNumber(totals.theta || 0, 6)}</td>
+              <td>${formatNumber(totals.vega || 0, 6)}</td>
+              <td>${formatNumber(totals.pnl_reprice || 0, 4)}</td>
+            </tr>
+          `);
+          if (rows.length) {
+            html += `<table><thead><tr>
+              <th>${t('th_symbol')}</th>
+              <th>${t('analysis_label_delta')}</th>
+              <th>${t('analysis_label_gamma')}</th>
+              <th>${t('analysis_label_theta')}</th>
+              <th>${t('analysis_label_vega')}</th>
+              <th>${t('analysis_label_iv_pnl')}</th>
+            </tr></thead><tbody>${rows.join('')}</tbody></table>`;
+          }
+        }
       }
       }
 
@@ -4805,6 +4900,34 @@
     document.getElementById('enable_trading').addEventListener('click', enableTrading);
     document.getElementById('disable_trading').addEventListener('click', disableTrading);
     document.getElementById('refresh_orders').addEventListener('click', () => fetchOrders(''));
+    const optionsSourceSelect = document.getElementById('options_greeks_source');
+    if (optionsSourceSelect) {
+      optionsSourceSelect.addEventListener('change', async () => {
+        await fetchOptionsReport();
+        if (state.analysisData) {
+          renderAnalysis(state.analysisData, state.analysisMode || 'full');
+        }
+      });
+    }
+    const optionsSymbolSelect = document.getElementById('options_symbol');
+    if (optionsSymbolSelect) {
+      optionsSymbolSelect.addEventListener('change', () => {
+        if (state.analysisData) {
+          renderAnalysis(state.analysisData, state.analysisMode || 'full');
+        }
+      });
+    }
+    const optionsBybitBtn = document.getElementById('options_use_bybit');
+    if (optionsBybitBtn) {
+      optionsBybitBtn.addEventListener('click', async () => {
+        const sel = document.getElementById('options_greeks_source');
+        if (sel) sel.value = 'bybit';
+        await fetchOptionsReport();
+        if (state.analysisData) {
+          renderAnalysis(state.analysisData, state.analysisMode || 'full');
+        }
+      });
+    }
     document.getElementById('lang_select').addEventListener('change', (e) => setLanguage(e.target.value));
     document.getElementById('open_trading_modal').addEventListener('click', () => {
       document.getElementById('trading_modal').classList.add('active');

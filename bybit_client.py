@@ -300,6 +300,15 @@ class BybitAPIClient:
         result = data.get("result") or {}
         return result.get("list") or []
 
+    def fetch_positions_option(self, settle_coin: str = "USDT") -> List[Dict]:
+        """Fetch option positions"""
+        params = {"category": "option", "settleCoin": settle_coin}
+        data = self._signed_request("/v5/position/list", params)
+        if not data:
+            return []
+        result = data.get("result") or {}
+        return result.get("list") or []
+
     def fetch_active_orders(
         self,
         symbol: Optional[str] = None,

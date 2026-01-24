@@ -36,6 +36,11 @@ except Exception:
     except Exception:
         generate_premium_report = None
 
+try:
+    from extensions.options_analytics.options_report import build_options_report
+except Exception:
+    build_options_report = None
+
 # Load .env file from current directory or script directory
 load_dotenv()
 load_dotenv(Path(__file__).resolve().parent / ".env")  # Also check script directory
@@ -1480,6 +1485,25 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 print(traceback.format_exc())
                 return self._write_json({"ok": False, "error": f"Analysis error: {error_msg}"}, status=500)
 
+        if path == "/api/options/report":
+            if not build_options_report:
+                return self._write_json({"ok": False, "error": "options analytics extension not available"}, status=500)
+            if not self.bybit_key or not self.bybit_secret:
+                return self._write_json({"ok": False, "error": "API credentials not set"}, status=400)
+            try:
+                settle = (query_params.get("settle") or ["USDT"])[0]
+                iv_btc = float((query_params.get("iv_btc") or ["0.44"])[0])
+                iv_eth = float((query_params.get("iv_eth") or ["0.65"])[0])
+                iv_shock = float((query_params.get("iv_shock") or ["0.0"])[0])
+            except Exception:
+                return self._write_json({"ok": False, "error": "invalid parameters"}, status=400)
+            if not self.bybit_client:
+                self.bybit_client = BybitAPIClient(
+                    self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                )
+            report = build_options_report(self.bybit_client, self.bybit_url, settle, iv_btc, iv_eth, iv_shock)
+            return self._write_json({"ok": True, "report": report}, status=200)
+
         # Positions endpoint
         if path == "/api/positions":
             if self.mode == "realtime":
@@ -1785,6 +1809,12 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
 
                 period = f"{start or '-'} ~ {end or '-'}" if (start or end) else f"{days}d"
                 markout_path = LOGS_DIR / "execution_markout.jsonl"
+                options_payload = None
+                if build_options_report and self.bybit_key and self.bybit_secret:
+                    try:
+                        options_payload = build_options_report(self.bybit_client, self.bybit_url, "USDT", 0.44, 0.65, 0.0)
+                    except Exception:
+                        options_payload = None
                 try:
                     out_pdf = generate_premium_report(
                         analysis=analysis,
@@ -1794,6 +1824,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                         title=title,
                         period=period,
                         markout_path=str(markout_path) if markout_path.exists() else None,
+                        options_report=options_payload,
                     )
                 except TypeError:
                     out_pdf = generate_premium_report(

@@ -1495,13 +1495,16 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 iv_btc = float((query_params.get("iv_btc") or ["0.44"])[0])
                 iv_eth = float((query_params.get("iv_eth") or ["0.65"])[0])
                 iv_shock = float((query_params.get("iv_shock") or ["0.0"])[0])
+                source = (query_params.get("source") or ["bs"])[0].lower().strip() or "bs"
             except Exception:
                 return self._write_json({"ok": False, "error": "invalid parameters"}, status=400)
             if not self.bybit_client:
                 self.bybit_client = BybitAPIClient(
                     self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
                 )
-            report = build_options_report(self.bybit_client, self.bybit_url, settle, iv_btc, iv_eth, iv_shock)
+            if source not in ("bs", "bybit"):
+                source = "bs"
+            report = build_options_report(self.bybit_client, self.bybit_url, settle, iv_btc, iv_eth, iv_shock, source)
             return self._write_json({"ok": True, "report": report}, status=200)
 
         # Positions endpoint
@@ -1812,7 +1815,15 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 options_payload = None
                 if build_options_report and self.bybit_key and self.bybit_secret:
                     try:
-                        options_payload = build_options_report(self.bybit_client, self.bybit_url, "USDT", 0.44, 0.65, 0.0)
+                        options_payload = build_options_report(
+                            self.bybit_client,
+                            self.bybit_url,
+                            "USDT",
+                            0.44,
+                            0.65,
+                            0.0,
+                            "bybit",
+                        )
                     except Exception:
                         options_payload = None
                 try:

@@ -559,6 +559,250 @@
       pointer-events: none;
       z-index: 4;
     }
+    .chart-toolbar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      padding: 14px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(11, 16, 26, 0.95), rgba(15, 22, 34, 0.92));
+      margin-bottom: 14px;
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.45);
+    }
+    .toolbar-section {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .toolbar-center {
+      flex: 1;
+      justify-content: space-between;
+    }
+    .tf-group {
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tf-btn {
+      background: rgba(124, 196, 255, 0.08);
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .tf-btn.active {
+      border-color: rgba(124, 196, 255, 0.6);
+      color: var(--accent);
+      background: rgba(124, 196, 255, 0.15);
+    }
+    .indicator-dropdown {
+      position: relative;
+    }
+    .indicator-dropdown .btn {
+      padding-right: 24px;
+    }
+    .indicator-dropdown .dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: rgba(15, 23, 35, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 20;
+    }
+    .indicator-dropdown.open .dropdown-menu {
+      display: flex;
+    }
+    .indicator-dropdown label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text);
+    }
+    .tool-group {
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tool-btn {
+      border-radius: 8px;
+      padding: 6px 10px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+    .tool-btn.active {
+      border-color: rgba(77, 214, 197, 0.7);
+      color: var(--accent);
+      background: rgba(77, 214, 197, 0.1);
+    }
+    .overlay-pill-group {
+      display: inline-flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .overlay-pill {
+      border-radius: 999px;
+      padding: 4px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(15, 23, 35, 0.6);
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .overlay-pill input {
+      margin: 0;
+    }
+    .live-badge {
+      border-radius: 999px;
+      padding: 4px 10px;
+      border: 1px solid rgba(110, 231, 183, 0.5);
+      background: rgba(110, 231, 183, 0.08);
+      color: var(--success);
+      letter-spacing: 0.08em;
+      font-size: 10px;
+      text-transform: uppercase;
+      transition: opacity 0.2s ease;
+      opacity: 0;
+    }
+    .live-badge.active {
+      opacity: 1;
+    }
+    .segmented {
+      display: inline-flex;
+      gap: 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.02);
+      padding: 3px;
+    }
+    .segmented .side-btn {
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 4px 14px;
+      background: transparent;
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .segmented .side-btn.active {
+      background: rgba(77, 214, 197, 0.15);
+      border-color: rgba(77, 214, 197, 0.4);
+      color: var(--accent);
+    }
+    .chart-surface {
+      position: relative;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: #0c1120;
+      min-height: calc(var(--chart-height));
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .chart-container {
+      position: relative;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .chart-legend {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(8, 12, 20, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 12px;
+      color: var(--text);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: none;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(12px);
+    }
+    .chart-legend .legend-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+    .chart-legend .legend-label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+    .chart-legend .legend-value {
+      font-weight: 600;
+    }
+    .chart-legend .value-positive {
+      color: var(--success);
+    }
+    .chart-legend .value-negative {
+      color: var(--danger);
+    }
+    .chart-legend .legend-time {
+      flex: 1;
+      font-size: 11px;
+    }
+    .chart-bottom {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .trade-panel {
+      flex: 1 1 520px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(15, 23, 35, 0.85);
+      display: grid;
+      gap: 8px;
+    }
+    .trade-panel .panel-title {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .trade-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .quick-panel {
+      align-items: center;
+      gap: 10px;
+    }
+    .chart-status {
+      min-width: 200px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 12px;
+      background: rgba(11, 16, 26, 0.8);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .is-hidden {
+      display: none !important;
+    }
     .chart-drawings.active {
       pointer-events: auto;
       cursor: crosshair;
@@ -969,18 +1213,77 @@
 
   <div id="panel-chart" class="panel">
     <h2 data-i18n="heading_chart">Chart</h2>
-    <div class="controls">
-      <label><span data-i18n="label_symbol">Symbol</span>
-        <select id="chart_symbol" class="symbol-select">
-          <option value="" data-i18n="all">ALL</option>
-        </select>
-      </label>
-      <label><span data-i18n="label_custom_symbol">Search</span>
-        <input id="chart_custom_symbol" type="text" placeholder="e.g. BTCUSDT">
-      </label>
-      <button id="chart_add_symbol" data-i18n="button_add_symbol">Add</button>
+    <div class="chart-toolbar">
+      <div class="toolbar-section toolbar-left">
+        <label><span data-i18n="label_symbol">Symbol</span>
+          <select id="chart_symbol" class="symbol-select">
+            <option value="" data-i18n="all">ALL</option>
+          </select>
+        </label>
+        <label><span data-i18n="label_custom_symbol">Search</span>
+          <input id="chart_custom_symbol" type="text" placeholder="e.g. BTCUSDT">
+        </label>
+        <button id="chart_add_symbol" data-i18n="button_add_symbol">Add</button>
+      </div>
+      <div class="toolbar-section toolbar-center">
+        <div class="tf-group">
+          <button class="tf-btn" data-interval="tick">tick</button>
+          <button class="tf-btn" data-interval="1s">1s</button>
+          <button class="tf-btn" data-interval="5s">5s</button>
+          <button class="tf-btn" data-interval="1">1m</button>
+          <button class="tf-btn" data-interval="3">3m</button>
+          <button class="tf-btn" data-interval="5">5m</button>
+          <button class="tf-btn" data-interval="15">15m</button>
+          <button class="tf-btn" data-interval="30">30m</button>
+          <button class="tf-btn" data-interval="60">1h</button>
+          <button class="tf-btn" data-interval="120">2h</button>
+          <button class="tf-btn" data-interval="240">4h</button>
+          <button class="tf-btn" data-interval="D">1D</button>
+        </div>
+        <div class="indicator-dropdown" id="chart_indicator_dropdown">
+          <button class="btn ghost indicator-toggle" type="button">Indicators ▾</button>
+          <div class="dropdown-menu">
+            <label><input type="checkbox" id="chart_ind_ma"><span>MA 20</span></label>
+            <label><input type="checkbox" id="chart_ind_ema"><span>EMA 20</span></label>
+            <label><input type="checkbox" id="chart_ind_vwap"><span>VWAP</span></label>
+          </div>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn active" data-tool="cursor">Cursor</button>
+          <button class="tool-btn" data-tool="crosshair">Crosshair</button>
+          <button class="tool-btn" data-tool="hline">H-Line</button>
+          <button class="tool-btn" data-tool="rect">Rectangle</button>
+        </div>
+      </div>
+      <div class="toolbar-section toolbar-right">
+        <div class="overlay-pill-group">
+          <label class="overlay-pill">
+            <input type="checkbox" id="chart_show_orders" checked>
+            <span data-i18n="label_active_orders">Orders</span>
+          </label>
+          <label class="overlay-pill">
+            <input type="checkbox" id="chart_show_trades" checked>
+            <span data-i18n="label_trades">Trades</span>
+          </label>
+          <label class="overlay-pill">
+            <input type="checkbox" id="chart_show_breakeven" checked>
+            <span data-i18n="label_breakeven">BE</span>
+          </label>
+          <label class="overlay-pill">
+            <input type="checkbox" id="chart_show_liq" checked>
+            <span data-i18n="label_liquidation">Liq</span>
+          </label>
+        </div>
+        <div class="live-badge" id="chart_live_badge">LIVE</div>
+        <div class="segmented" id="chart_side_toggle">
+          <button class="side-btn active" data-side="Buy" id="chart_side_buy">Buy</button>
+          <button class="side-btn" data-side="Sell" id="chart_side_sell">Sell</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-controls-row">
       <label><span data-i18n="label_interval">Interval</span>
-        <select id="chart_interval">
+        <select id="chart_interval" class="is-hidden">
           <option value="tick">Tick</option>
           <option value="1s">1s</option>
           <option value="5s">5s</option>
@@ -1010,22 +1313,6 @@
         <input id="chart_auto" type="checkbox" checked>
         <span data-i18n="label_auto_refresh">Auto Refresh</span>
       </label>
-      <label>
-        <input id="chart_show_breakeven" type="checkbox" checked>
-        <span data-i18n="label_breakeven">Break-even</span>
-      </label>
-      <label>
-        <input id="chart_show_liq" type="checkbox" checked>
-        <span data-i18n="label_liquidation">Liquidation</span>
-      </label>
-      <label>
-        <input id="chart_show_orders" type="checkbox" checked>
-        <span data-i18n="label_active_orders">Active Orders</span>
-      </label>
-      <label>
-        <input id="chart_show_trades" type="checkbox" checked>
-        <span data-i18n="label_trades">Trades</span>
-      </label>
       <label class="height-control">
         <span data-i18n="label_chart_height">Height</span>
         <input id="chart_height" type="range" min="320" max="720" step="20" value="460">
@@ -1039,34 +1326,60 @@
       <div class="chart-meta-box" id="chart_status">Select a symbol to load klines.</div>
       <div class="chart-meta-box chart-note" id="chart_note"></div>
     </div>
-    <div class="chart-wrap">
-      <div class="chart-trade">
-        <div class="trade-title" data-i18n="trade_panel_title">Chart Trading</div>
-        <label><span data-i18n="label_qty">Qty</span>
-          <input id="chart_order_qty" type="number" min="0" step="0.0001" value="0">
-        </label>
-        <label><span data-i18n="label_order_type">Order Type</span>
-          <select id="chart_order_mode">
-            <option value="market" data-i18n="order_mode_market">Market</option>
-            <option value="best" data-i18n="order_mode_best">Best Bid/Offer</option>
-            <option value="chase" data-i18n="order_mode_chase">Chase Limit</option>
-            <option value="limit" data-i18n="order_mode_limit">Limit</option>
-          </select>
-        </label>
-        <label id="chart_price_row"><span data-i18n="label_price">Price</span>
-          <input id="chart_order_price" type="number" min="0" step="0.01" value="">
-        </label>
-        <label>
-          <input id="chart_reduce_only" type="checkbox">
-          <span data-i18n="label_reduce_only">Reduce Only</span>
-        </label>
+    <div class="chart-surface">
+      <div class="chart-legend" id="chartLegend"></div>
+      <div class="chart-container" id="chart_container">
+        <svg id="chart_drawings" class="chart-drawings" width="100%" height="100%"></svg>
+      </div>
+    </div>
+    <div class="chart-bottom">
+      <div class="trade-panel">
+        <div class="panel-title" data-i18n="trade_panel_title">Chart Trading</div>
+        <div class="row">
+          <label><span data-i18n="label_qty">Qty</span>
+            <input id="chart_order_qty" type="number" min="0" step="0.0001" value="0" class="field sm">
+          </label>
+          <label><span data-i18n="label_order_type">Order Type</span>
+            <select id="chart_order_mode" class="field sm">
+              <option value="market" data-i18n="order_mode_market">Market</option>
+              <option value="best" data-i18n="order_mode_best">Best Bid/Offer</option>
+              <option value="chase" data-i18n="order_mode_chase">Chase Limit</option>
+              <option value="limit" data-i18n="order_mode_limit">Limit</option>
+            </select>
+          </label>
+          <label id="chart_price_row"><span data-i18n="label_price">Price</span>
+            <input id="chart_order_price" type="number" min="0" step="0.01" value="" class="field sm">
+          </label>
+          <label>
+            <input id="chart_reduce_only" type="checkbox">
+            <span data-i18n="label_reduce_only">Reduce Only</span>
+          </label>
+        </div>
+        <div class="row quick-panel">
+          <label><span>Quick Qty</span>
+            <input id="quickQtyMax" type="number" min="0" step="0.0001" class="field sm" placeholder="Max">
+          </label>
+          <div class="segmented small" id="quickQtyPresets">
+            <button class="btn sm ghost" data-pct="25">25%</button>
+            <button class="btn sm ghost" data-pct="50">50%</button>
+            <button class="btn sm ghost" data-pct="75">75%</button>
+            <button class="btn sm ghost" data-pct="100">100%</button>
+          </div>
+          <button id="quickBuy" class="btn primary sm">Buy MKT</button>
+          <button id="quickSell" class="btn danger sm">Sell MKT</button>
+        </div>
+        <div class="row">
+          <label><span>BE Price</span>
+            <input id="bePriceInput" type="number" min="0" step="0.01" class="field sm" placeholder="Break-even">
+          </label>
+          <label><span>Liq Price</span>
+            <input id="liqPriceInput" type="number" min="0" step="0.01" class="field sm" placeholder="Liquidation">
+          </label>
+        </div>
         <div class="trade-actions">
           <button class="buy" id="chart_buy" data-i18n="button_buy">Buy</button>
           <button class="sell" id="chart_sell" data-i18n="button_sell">Sell</button>
         </div>
-      </div>
-      <div class="chart-canvas" id="chart_container">
-        <svg id="chart_drawings" class="chart-drawings" width="100%" height="100%"></svg>
       </div>
     </div>
   </div>
@@ -1301,13 +1614,29 @@
     let streamCandles = [];
     let tickPoints = [];
     let tickUpdateQueued = false;
-    let lastTickTime = 0;
     let suppressRangeTracking = false;
     let chartKlinesCache = [];
     let drawMode = null;
     let drawStart = null;
     let drawTempRect = null;
     let drawings = [];
+    let volumeSeries = null;
+    let chartLegendEl = null;
+    let chartContainerEl = null;
+    let lastStreamCandle = null;
+    let lastStreamBucket = null;
+    let markerBuffer = [];
+    let markerHash = '';
+    let markerTimer = null;
+    let indicatorSeries = new Map();
+    let indicatorsEnabled = { ma20: false, ema20: false, vwap: false };
+    let indicatorTimer = null;
+    let overlayLines = { orders: [], be: [], liq: [] };
+    let activeTool = 'cursor';
+    let currentSide = 'Buy';
+    let isDraggingOrder = false;
+    let orderLine = null;
+    let dragPrice = null;
     const TICK_MAX_POINTS = 2000;
     const TICK_TRIM_EVERY = 100;
     const I18N = {
@@ -4006,11 +4335,11 @@
     }
 
     function updateOrdersOverlay() {
-      if (!candleSeries) return;
+      const overlaySeries = getActivePriceSeries();
+      if (!overlaySeries) return;
       const showOrders = document.getElementById('chart_show_orders').checked;
       if (!showOrders) {
-        chartOrderLines.forEach(line => candleSeries.removePriceLine(line));
-        chartOrderLines = [];
+        removeSeriesLines(chartOrderLines);
         state.chartOrderSignature = '';
         return;
       }
@@ -4022,21 +4351,21 @@
       const orders = state.ordersCache.filter(o => (o.symbol || o.Symbol) === symbol);
       const orderSignature = orders.map(o => `${o.orderId || o.orderID || ''}:${o.price || o.avgPrice || ''}:${o.side || ''}`).join('|');
       if (orderSignature === state.chartOrderSignature) return;
-      chartOrderLines.forEach(line => candleSeries.removePriceLine(line));
-      chartOrderLines = [];
+      removeSeriesLines(chartOrderLines);
       orders.forEach(order => {
         const price = parseFloat(order.price || order.avgPrice || '');
         if (!Number.isFinite(price) || price <= 0) return;
         const side = String(order.side || '').toLowerCase();
         const isBuy = side.startsWith('b');
-        chartOrderLines.push(candleSeries.createPriceLine({
+        const line = overlaySeries.createPriceLine({
           price,
           color: isBuy ? '#27d07d' : '#ff6b6b',
           lineWidth: 1,
           lineStyle: 1,
           axisLabelVisible: true,
           title: isBuy ? t('chart_order_buy') : t('chart_order_sell'),
-        }));
+        });
+        chartOrderLines.push({ series: overlaySeries, line });
       });
       state.chartOrderSignature = orderSignature;
     }
@@ -4143,6 +4472,41 @@
         tickSeries.applyOptions({ lineType: window.LightweightCharts.LineType.Simple });
       }
       tickSeries.applyOptions({ visible: false });
+      volumeSeries = chart.addHistogramSeries({
+        color: '#3a465e',
+        priceFormat: { type: 'volume' },
+        priceScaleId: '',
+        lastValueVisible: false,
+      });
+      if (volumeSeries) {
+        volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+      }
+      chartLegendEl = document.getElementById('chartLegend');
+      updateLegendFromLatest();
+      chart.subscribeCrosshairMove(param => {
+        if (!param || param.time === undefined) {
+          updateLegendFromLatest();
+          return;
+        }
+        const candle = param.seriesData.get(candleSeries);
+        if (candle && candle.time) {
+          const candles = streamCandles.length ? streamCandles : chartKlinesCache;
+          const idx = candles.findIndex(c => c.time === candle.time);
+          updateLegend(candle, idx >= 0 ? idx : candles.length - 1);
+          return;
+        }
+        const tick = param.seriesData.get(tickSeries);
+        if (tick && tick.time) {
+          updateLegend({
+            time: tick.time,
+            open: tick.value,
+            high: tick.value,
+            low: tick.value,
+            close: tick.value,
+            volume: 0,
+          }, 0);
+        }
+      });
       chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
         renderDrawings();
       });
@@ -4290,66 +4654,67 @@
         tradeStream.close();
         tradeStream = null;
       }
+      if (streamRetryTimer) {
+        clearTimeout(streamRetryTimer);
+        streamRetryTimer = null;
+      }
       state.streamInterval = '';
     }
 
     function applyTradeToStream(trade, bucketSeconds) {
-      const ts = Number(trade.ts || 0);
-      const price = Number(trade.price || 0);
-      const qty = Number(trade.qty || 0);
-      if (!Number.isFinite(ts) || !Number.isFinite(price)) return;
-      const base = Math.floor(ts);
-      const bucket = Math.floor(base / bucketSeconds) * bucketSeconds;
-      let candle = streamCandles[streamCandles.length - 1];
-      if (!candle || candle.time !== bucket) {
-        candle = {
+      const ts = normalizeTimestamp(trade.ts || trade.time || trade.T);
+      const price = Number(trade.price || trade.p || 0);
+      const qty = Number(trade.qty || trade.size || trade.v || 0);
+      if (!ts || !Number.isFinite(price)) return;
+      const bucket = bucketSeconds ? Math.floor(ts / bucketSeconds) * bucketSeconds : ts;
+      if (!lastStreamCandle || bucket > lastStreamCandle.time) {
+        const candle = {
           time: bucket,
           open: price,
           high: price,
           low: price,
           close: price,
-          volume: qty
+          volume: qty,
         };
         streamCandles.push(candle);
-        if (streamCandles.length > 300) {
-          streamCandles = streamCandles.slice(-300);
+        lastStreamCandle = candle;
+        lastStreamBucket = bucket;
+        if (candleSeries) candleSeries.update(candle);
+        if (volumeSeries) volumeSeries.update(buildVolumeBar(candle));
+        if (streamCandles.length > 600) {
+          streamCandles = streamCandles.slice(-500);
+          if (candleSeries) candleSeries.setData(streamCandles);
+          if (volumeSeries) volumeSeries.setData(buildVolumeBars(streamCandles));
         }
       } else {
-        candle.high = Math.max(candle.high, price);
-        candle.low = Math.min(candle.low, price);
-        candle.close = price;
-        candle.volume = (candle.volume || 0) + qty;
+        lastStreamCandle.high = Math.max(lastStreamCandle.high, price);
+        lastStreamCandle.low = Math.min(lastStreamCandle.low, price);
+        lastStreamCandle.close = price;
+        lastStreamCandle.volume = (lastStreamCandle.volume || 0) + qty;
+        if (candleSeries) candleSeries.update(lastStreamCandle);
+        if (volumeSeries) volumeSeries.update(buildVolumeBar(lastStreamCandle));
       }
-      candleSeries.setData(streamCandles);
-    }
-
-    function normalizeTickTime(ts) {
-      let t = Number(ts || 0);
-      if (!Number.isFinite(t) || t <= 0) return 0;
-      if (t <= lastTickTime) {
-        t = lastTickTime + 0.001;
-      }
-      lastTickTime = t;
-      return t;
+      updateLegendFromLatest();
     }
 
     function applyTradeToTick(trade) {
-      const ts = Number(trade.ts || 0);
-      const price = Number(trade.price || 0);
-      if (!Number.isFinite(ts) || !Number.isFinite(price)) return;
-      const time = normalizeTickTime(ts);
-      if (!time) return;
-      const point = { time, value: price };
-      tickPoints.push(point);
-      if (tickPoints.length < 2) {
-        tickSeries.setData(tickPoints);
+      const ts = normalizeTimestamp(trade.ts || trade.time || trade.T);
+      const price = Number(trade.price || trade.p || 0);
+      if (!ts || !Number.isFinite(price)) return;
+      const point = { time: ts, value: price };
+      const lastPoint = tickPoints[tickPoints.length - 1];
+      if (lastPoint && lastPoint.time === point.time) {
+        tickPoints[tickPoints.length - 1] = point;
+        if (tickSeries) tickSeries.update(point);
       } else {
-        tickSeries.update(point);
+        tickPoints.push(point);
+        if (tickSeries) tickSeries.update(point);
       }
       if (tickPoints.length > TICK_MAX_POINTS && tickPoints.length % TICK_TRIM_EVERY === 0) {
         tickPoints = tickPoints.slice(-TICK_MAX_POINTS);
         scheduleTickSync();
       }
+      updateLegendFromLatest();
     }
 
     function scheduleTickSync() {
@@ -4369,15 +4734,14 @@
       if (!symbol) return;
       streamCandles = [];
       state.streamInterval = interval;
+      if (volumeSeries) volumeSeries.setData([]);
       if (interval === 'tick') {
         tickPoints = [];
         tickSeries.setData([]);
-        lastTickTime = 0;
-      } else if (interval === '1s' || interval === '5s') {
-        candleSeries.setData([]);
       } else {
         candleSeries.setData([]);
       }
+      const status = document.getElementById('chart_status');
       tradeStream = new EventSource(`/api/trades/stream?symbol=${encodeURIComponent(symbol)}`);
       tradeStream.addEventListener('snapshot', (event) => {
         try {
@@ -4386,12 +4750,11 @@
           const trades = Array.isArray(payload.trades) ? payload.trades : [];
           trades.sort((a, b) => (a.ts || 0) - (b.ts || 0));
           if (interval === 'tick') {
-            lastTickTime = 0;
             tickPoints = trades.map(t => {
-              const time = normalizeTickTime(t.ts);
+              const time = normalizeTimestamp(t.ts);
               return time ? { time, value: t.price } : null;
             }).filter(Boolean);
-            tickSeries.setData(tickPoints);
+            if (tickSeries) tickSeries.setData(tickPoints);
           } else if (interval === '1s') {
             trades.forEach(trade => applyTradeToStream(trade, 1));
           } else if (interval === '5s') {
@@ -4411,6 +4774,22 @@
             applyTradeToStream(trade, 5);
           }
         } catch (e) {}
+      };
+      tradeStream.onerror = () => {
+        if (status) status.textContent = 'Stream disconnected, retrying...';
+        stopTradeStream();
+        if (streamRetryTimer) {
+          clearTimeout(streamRetryTimer);
+          streamRetryTimer = null;
+        }
+        streamRetryTimer = setTimeout(() => {
+          streamRetryTimer = null;
+          const currentSymbol = getChartSymbol();
+          const currentInterval = document.getElementById('chart_interval').value;
+          if (currentSymbol === symbol && currentInterval === interval) {
+            startTradeStream(interval);
+          }
+        }, 2200);
       };
     }
 
@@ -4447,7 +4826,6 @@
       if (tickSeries) {
         tickPoints = [];
         tickSeries.setData([]);
-        lastTickTime = 0;
       }
       applyChartLocalization();
       const limit = 300;
@@ -4465,6 +4843,7 @@
       suppressRangeTracking = true;
       chartKlinesCache = data.klines;
       candleSeries.setData(data.klines);
+      if (volumeSeries) volumeSeries.setData(buildVolumeBars(data.klines));
       if (data.klines.length > 0) {
         const latestTime = data.klines[data.klines.length - 1].time;
         if (latestTime && latestTime !== state.lastKlineTime) {
@@ -4488,6 +4867,7 @@
       state.lastKlineInterval = interval;
       state.lastKlineSymbol = symbol;
       if (status) status.textContent = `${symbol} · ${interval} ${currentLang === 'zh' ? '周期' : 'interval'}`;
+      updateLegendFromLatest();
       requestOverlayUpdate();
     }
 
@@ -4506,9 +4886,10 @@
       if (!candleSeries) return;
       const symbol = getChartSymbol();
       if (!symbol) return;
+      const overlaySeries = getActivePriceSeries();
+      if (!overlaySeries) return;
 
-      chartPositionLines.forEach(line => candleSeries.removePriceLine(line));
-      chartPositionLines = [];
+      removeSeriesLines(chartPositionLines);
 
       const showBreakeven = document.getElementById('chart_show_breakeven').checked;
       const showLiq = document.getElementById('chart_show_liq').checked;
@@ -4526,24 +4907,26 @@
             const breakeven = parseFloat(pos.breakEvenPrice || pos.BreakEvenPrice || '');
             const liq = parseFloat(pos.liqPrice || pos.LiqPrice || '');
             if (showBreakeven && Number.isFinite(breakeven) && breakeven > 0) {
-              chartPositionLines.push(candleSeries.createPriceLine({
+              const line = overlaySeries.createPriceLine({
                 price: breakeven,
                 color: '#d7dee8',
                 lineWidth: 1,
                 lineStyle: 2,
                 axisLabelVisible: true,
                 title: t('chart_break_even'),
-              }));
+              });
+              chartPositionLines.push({ series: overlaySeries, line });
             }
             if (showLiq && Number.isFinite(liq) && liq > 0) {
-              chartPositionLines.push(candleSeries.createPriceLine({
+              const line = overlaySeries.createPriceLine({
                 price: liq,
                 color: '#ff6b6b',
                 lineWidth: 1,
                 lineStyle: 3,
                 axisLabelVisible: true,
                 title: t('chart_liq'),
-              }));
+              });
+              chartPositionLines.push({ series: overlaySeries, line });
             }
           }
         }
@@ -4619,6 +5002,194 @@
       }
       if (intervalValue === 'D') return 86400;
       return 0;
+    }
+
+    function normalizeTimestamp(ts) {
+      const value = Number(ts);
+      if (!Number.isFinite(value) || value <= 0) return null;
+      if (value > 1e12) return Math.floor(value / 1000);
+      return Math.floor(value);
+    }
+
+    function formatPrice(value) {
+      if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+      return new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(value);
+    }
+
+    function formatVolume(value) {
+      if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+      return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
+    }
+
+    function formatPercent(value) {
+      if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+      return `${value.toFixed(2)}%`;
+    }
+
+    function buildVolumeBar(candle) {
+      if (!candle) return { time: 0, value: 0, color: 'rgba(77, 214, 197, 0.6)' };
+      return {
+        time: candle.time,
+        value: candle.volume || 0,
+        color: candle.close >= candle.open ? 'rgba(77, 214, 197, 0.6)' : 'rgba(255, 107, 107, 0.6)',
+      };
+    }
+
+    function buildVolumeBars(candles) {
+      return (candles || []).map(buildVolumeBar);
+    }
+
+    function removeSeriesLines(list) {
+      if (!Array.isArray(list)) return;
+      list.forEach(entry => {
+        if (entry?.series && entry?.line) {
+          entry.series.removePriceLine(entry.line);
+        }
+      });
+      list.length = 0;
+    }
+
+    function getActivePriceSeries() {
+      const intervalValue = document.getElementById('chart_interval')?.value || '1';
+      return intervalValue === 'tick' ? tickSeries : candleSeries;
+    }
+
+    function updateLegend(candle, idx) {
+      const legend = chartLegendEl || document.getElementById('chartLegend');
+      if (!legend || !candle) return;
+      if (!chartLegendEl) chartLegendEl = legend;
+      const candles = streamCandles.length ? streamCandles : chartKlinesCache;
+      const prevClose = idx > 0 && candles[idx - 1] ? candles[idx - 1].close : null;
+      const change = prevClose ? ((candle.close - prevClose) / prevClose) * 100 : null;
+      const changeClass = change === null ? '' : (change >= 0 ? 'value-positive' : 'value-negative');
+      const changeLabel = change === null ? '-' : formatPercent(change);
+      const timeLabel = candle.time ? new Date(candle.time * 1000).toLocaleString() : '-';
+      legend.innerHTML = `
+        <div class="legend-row">
+          <span class="legend-label">O</span><span class="legend-value">${formatPrice(candle.open)}</span>
+          <span class="legend-label">H</span><span class="legend-value">${formatPrice(candle.high)}</span>
+          <span class="legend-label">L</span><span class="legend-value">${formatPrice(candle.low)}</span>
+          <span class="legend-label">C</span><span class="legend-value">${formatPrice(candle.close)}</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-label">Δ</span><span class="legend-value ${changeClass}">${changeLabel}</span>
+          <span class="legend-label">Vol</span><span class="legend-value">${formatVolume(candle.volume || 0)}</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-label legend-time">${timeLabel}</span>
+        </div>
+      `;
+    }
+
+    function updateLegendFromLatest() {
+      const candles = streamCandles.length ? streamCandles : chartKlinesCache;
+      if (candles.length) {
+        const candle = candles[candles.length - 1];
+        updateLegend(candle, candles.length - 1);
+        return;
+      }
+      const latestTick = tickPoints[tickPoints.length - 1];
+      if (!latestTick) return;
+      updateLegend({
+        time: latestTick.time,
+        open: latestTick.value,
+        high: latestTick.value,
+        low: latestTick.value,
+        close: latestTick.value,
+        volume: 0,
+      }, 0);
+    }
+
+    function computeSMA(candles, period) {
+      const result = [];
+      for (let i = period - 1; i < candles.length; i += 1) {
+        const slice = candles.slice(i - period + 1, i + 1);
+        const sum = slice.reduce((acc, c) => acc + c.close, 0);
+        result.push({ time: candles[i].time, value: sum / period });
+      }
+      return result;
+    }
+
+    function computeEMA(candles, period) {
+      const result = [];
+      if (candles.length < period) return result;
+      const multiplier = 2 / (period + 1);
+      let ema = candles.slice(0, period).reduce((acc, c) => acc + c.close, 0) / period;
+      result.push({ time: candles[period - 1].time, value: ema });
+      for (let i = period; i < candles.length; i += 1) {
+        ema = (candles[i].close - ema) * multiplier + ema;
+        result.push({ time: candles[i].time, value: ema });
+      }
+      return result;
+    }
+
+    function computeVWAP(candles) {
+      const result = [];
+      let cumulativePV = 0;
+      let cumulativeVolume = 0;
+      candles.forEach(candle => {
+        const volume = candle.volume || 0;
+        const typical = (candle.high + candle.low + candle.close) / 3;
+        cumulativePV += typical * volume;
+        cumulativeVolume += volume;
+        if (cumulativeVolume > 0) {
+          result.push({ time: candle.time, value: cumulativePV / cumulativeVolume });
+        }
+      });
+      return result;
+    }
+
+    function rebuildIndicators() {
+      if (!chart) return;
+      const candles = streamCandles.length ? streamCandles : chartKlinesCache;
+      if (!candles.length) return;
+      const configs = {
+        ma20: { type: 'ma', period: 20, color: '#4dd6c5' },
+        ema20: { type: 'ema', period: 20, color: '#a0b3ff' },
+        vwap: { type: 'vwap', color: '#f4d35e' },
+      };
+      Object.entries(configs).forEach(([key, cfg]) => {
+        if (!indicatorsEnabled[key]) {
+          if (indicatorSeries.has(key)) {
+            chart.removeSeries(indicatorSeries.get(key));
+            indicatorSeries.delete(key);
+          }
+          return;
+        }
+        if (!indicatorSeries.has(key)) {
+          const series = chart.addLineSeries({
+            color: cfg.color,
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          indicatorSeries.set(key, series);
+        }
+        const series = indicatorSeries.get(key);
+        let data = [];
+        if (cfg.type === 'ma') data = computeSMA(candles, cfg.period);
+        if (cfg.type === 'ema') data = computeEMA(candles, cfg.period);
+        if (cfg.type === 'vwap') data = computeVWAP(candles);
+        series.setData(data);
+      });
+    }
+
+    function toggleIndicator(key, enabled) {
+      indicatorsEnabled[key] = enabled;
+      if (!enabled && indicatorSeries.has(key)) {
+        const series = indicatorSeries.get(key);
+        chart.removeSeries(series);
+        indicatorSeries.delete(key);
+      }
+      rebuildIndicators();
+    }
+
+    function scheduleIndicatorRecalc() {
+      if (indicatorTimer) return;
+      indicatorTimer = setTimeout(() => {
+        indicatorTimer = null;
+        rebuildIndicators();
+      }, 200);
     }
 
     function startChartPolling() {
@@ -5001,6 +5572,9 @@
     on('chart_show_liq', 'change', requestOverlayUpdate);
     on('chart_show_orders', 'change', updateOrdersOverlay);
     on('chart_show_trades', 'change', requestOverlayUpdate);
+    on('chart_ind_ma', 'change', (e) => toggleIndicator('ma20', e.target.checked));
+    on('chart_ind_ema', 'change', (e) => toggleIndicator('ema20', e.target.checked));
+    on('chart_ind_vwap', 'change', (e) => toggleIndicator('vwap', e.target.checked));
     on('chart_reload', 'click', () => {
       fetchKlines();
     });

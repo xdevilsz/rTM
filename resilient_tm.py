@@ -813,6 +813,29 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                     }
         return None
 
+    def _fetch_options_instruments(self, base: str = "") -> list[dict]:
+        params = {
+            "category": "option",
+            "limit": "1000",
+        }
+        if base:
+            params["baseCoin"] = base
+        items: list[dict] = []
+        cursor = ""
+        for _ in range(8):
+            if cursor:
+                params["cursor"] = cursor
+            data = self._public_get("/v5/market/instruments-info", params)
+            if not data:
+                break
+            result = data.get("result") or {}
+            batch = result.get("list") or []
+            items.extend(batch)
+            cursor = result.get("nextPageCursor") or ""
+            if not cursor:
+                break
+        return items
+
     def _get_trading_client(self) -> Optional[BybitAPIClient]:
         if not self.trading_key or not self.trading_secret:
             return None
@@ -2023,15 +2046,9 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         if path == "/api/options/instruments":
             base = query_params.get("base", [""])[0]
             instruments = []
-            params = {
-                "category": "option",
-            }
-            if base:
-                params["baseCoin"] = base
-            data = self._public_get("/v5/market/instruments-info", params)
-            if not data:
+            items = self._fetch_options_instruments(base)
+            if not items:
                 return self._write_json({"ok": False, "error": "options instruments fetch failed"}, status=502)
-            items = (data.get("result") or {}).get("list") or []
             for item in items:
                 symbol = item.get("symbol") or ""
                 if not symbol:

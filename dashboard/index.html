@@ -2031,6 +2031,8 @@
     let indicatorSeries = new Map();
     let indicatorsEnabled = { ma20: false, ema20: false, vwap: false };
     let indicatorTimer = null;
+    let indicatorDropdownBound = false;
+    const symbolPrecision = {};
     let overlayLines = { orders: [], be: [], liq: [] };
     let activeTool = 'cursor';
     let currentSide = 'Buy';
@@ -5289,6 +5291,8 @@
         if (status) status.textContent = t('chart_hint');
         return;
       }
+      await ensureSymbolPrecision(symbol);
+      applyChartPrecision(symbol);
       const interval = document.getElementById('chart_interval').value;
       const isIntervalChange = state.lastKlineInterval !== interval || state.lastKlineSymbol !== symbol;
       if (isIntervalChange) {
@@ -5518,6 +5522,83 @@
       return `${value.toFixed(2)}%`;
     }
 
+    function decimalsFromValue(step) {
+      if (!step) return 0;
+      const text = String(step).toLowerCase();
+      if (text.includes('e-')) {
+        const exp = Number(text.split('e-')[1]);
+        return Number.isFinite(exp) ? exp : 0;
+      }
+      if (text.includes('e+')) return 0;
+      if (!text.includes('.')) return 0;
+      const decimals = text.split('.')[1].replace(/0+$/, '');
+      return decimals.length;
+    }
+
+    function getDecimalsFromStep(step) {
+      return decimalsFromValue(step);
+    }
+
+    function formatWithDecimals(value, decimals, fallback = '-') {
+      if (value === null || value === undefined || !Number.isFinite(value)) return fallback;
+      const formatter = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      });
+      return formatter.format(value);
+    }
+
+    async function ensureSymbolPrecision(symbol) {
+      if (!symbol) return null;
+      if (symbolPrecision[symbol]) return symbolPrecision[symbol];
+      try {
+        const res = await fetch(`/api/instruments?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data || data.ok === false) return null;
+        const info = data.data || {};
+        const priceStep = info.priceFilter?.tickSize || info.tickSize || '';
+        const qtyStep = info.lotSizeFilter?.qtyStep || info.qtyStep || '';
+        const basePrecision = info.lotSizeFilter?.basePrecision || info.basePrecision || '';
+        const priceScale = Number(info.priceScale);
+        const tickDecimals = getDecimalsFromStep(priceStep);
+        const priceDecimals = Number.isFinite(priceScale)
+          ? Math.max(priceScale, tickDecimals)
+          : tickDecimals;
+        const qtyDecimals = getDecimalsFromStep(qtyStep || basePrecision);
+        symbolPrecision[symbol] = {
+          priceDecimals: Number.isFinite(priceDecimals) ? priceDecimals : 2,
+          qtyDecimals: Number.isFinite(qtyDecimals) ? qtyDecimals : 2,
+          tickSize: priceStep || '',
+          qtyStep: qtyStep || basePrecision || '',
+        };
+      } catch (err) {
+        if (err?.name === 'AbortError') return null;
+        return null;
+      }
+      return symbolPrecision[symbol];
+    }
+
+    function getPrecisionForSymbol(symbol) {
+      return symbolPrecision[symbol] || { priceDecimals: 2, qtyDecimals: 2, tickSize: '', qtyStep: '' };
+    }
+
+    function applyChartPrecision(symbol) {
+      if (!chart || !symbol) return;
+      const precision = getPrecisionForSymbol(symbol);
+      const tickSize = Number(precision.tickSize);
+      const minMove = Number.isFinite(tickSize) && tickSize > 0
+        ? tickSize
+        : Math.pow(10, -precision.priceDecimals);
+      const priceFormat = {
+        type: 'price',
+        precision: precision.priceDecimals,
+        minMove,
+      };
+      if (candleSeries) candleSeries.applyOptions({ priceFormat });
+      if (tickSeries) tickSeries.applyOptions({ priceFormat });
+    }
+
     function buildVolumeBar(candle) {
       if (!candle) return { time: 0, value: 0, color: 'rgba(77, 214, 197, 0.6)' };
       return {
@@ -5550,6 +5631,9 @@
       const legend = chartLegendEl || document.getElementById('chartLegend');
       if (!legend || !candle) return;
       if (!chartLegendEl) chartLegendEl = legend;
+      const precision = getPrecisionForSymbol(getChartSymbol());
+      const formatLegendPrice = (value) => formatWithDecimals(value, precision.priceDecimals, formatPrice(value));
+      const formatLegendVolume = (value) => formatWithDecimals(value, precision.qtyDecimals, formatVolume(value));
       const candles = streamCandles.length ? streamCandles : chartKlinesCache;
       const prevClose = idx > 0 && candles[idx - 1] ? candles[idx - 1].close : null;
       const change = prevClose ? ((candle.close - prevClose) / prevClose) * 100 : null;
@@ -5558,14 +5642,14 @@
       const timeLabel = candle.time ? new Date(candle.time * 1000).toLocaleString() : '-';
       legend.innerHTML = `
         <div class="legend-row">
-          <span class="legend-label">O</span><span class="legend-value">${formatPrice(candle.open)}</span>
-          <span class="legend-label">H</span><span class="legend-value">${formatPrice(candle.high)}</span>
-          <span class="legend-label">L</span><span class="legend-value">${formatPrice(candle.low)}</span>
-          <span class="legend-label">C</span><span class="legend-value">${formatPrice(candle.close)}</span>
+          <span class="legend-label">O</span><span class="legend-value">${formatLegendPrice(candle.open)}</span>
+          <span class="legend-label">H</span><span class="legend-value">${formatLegendPrice(candle.high)}</span>
+          <span class="legend-label">L</span><span class="legend-value">${formatLegendPrice(candle.low)}</span>
+          <span class="legend-label">C</span><span class="legend-value">${formatLegendPrice(candle.close)}</span>
         </div>
         <div class="legend-row">
           <span class="legend-label">Δ</span><span class="legend-value ${changeClass}">${changeLabel}</span>
-          <span class="legend-label">Vol</span><span class="legend-value">${formatVolume(candle.volume || 0)}</span>
+          <span class="legend-label">Vol</span><span class="legend-value">${formatLegendVolume(candle.volume || 0)}</span>
         </div>
         <div class="legend-row">
           <span class="legend-label legend-time">${timeLabel}</span>
@@ -5674,6 +5758,19 @@
         indicatorSeries.delete(key);
       }
       rebuildIndicators();
+    }
+
+    function bindIndicatorDropdown() {
+      const dropdown = document.getElementById('chart_indicator_dropdown');
+      if (!dropdown || indicatorDropdownBound) return;
+      indicatorDropdownBound = true;
+      document.addEventListener('mousedown', event => {
+        if (!dropdown.contains(event.target)) dropdown.classList.remove('open');
+      });
+      const toggle = dropdown.querySelector('.dropdown-toggle');
+      if (toggle) {
+        toggle.addEventListener('click', () => dropdown.classList.toggle('open'));
+      }
     }
 
     function scheduleIndicatorRecalc() {
@@ -5952,6 +6049,7 @@
     setActiveInterval('1', { skipFetch: true });
     setActiveTool('cursor');
     setActiveSide('Buy');
+    bindIndicatorDropdown();
     updateChartHeight(460);
     updateChartOrderMode();
     updateSymbolOptions();

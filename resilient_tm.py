@@ -1536,6 +1536,21 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 return self._write_json({"positions": positions}, status=200)
             return self._write_json({"ok": False, "error": "positions not available in this mode"}, status=400)
 
+        if path == "/api/instruments":
+            symbol = query_params.get("symbol", [""])[0]
+            if not symbol:
+                return self._write_json({"ok": False, "error": "symbol is required"}, status=400)
+            params = {
+                "category": self.bybit_category,
+                "symbol": symbol,
+            }
+            data = self._public_get("/v5/market/instruments-info", params)
+            if not data:
+                return self._write_json({"ok": False, "error": "instrument fetch failed"}, status=502)
+            items = (data.get("result") or {}).get("list") or []
+            info = items[0] if items else {}
+            return self._write_json({"ok": True, "data": info}, status=200)
+
         if path == "/api/klines":
             symbol = query_params.get("symbol", [""])[0]
             interval = query_params.get("interval", ["1"])[0]

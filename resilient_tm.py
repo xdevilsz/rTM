@@ -74,11 +74,12 @@ OPTIONS_SNAPSHOT_MAX_POINTS = 3000
 OPTIONS_SNAPSHOT_MIN_INTERVAL_MS = 800
 OPTIONS_SNAPSHOT_RECORD_INTERVAL_MS = 30000
 OPTIONS_TRADE_BAR_INTERVAL_MS = 30000
+OPTIONS_TRADE_FALLBACK_INTERVAL_MS = 15 * 60 * 1000
 OPTIONS_TRADE_RETENTION_MIN = 1440
 OPTIONS_TRADE_MAX_BARS = 4000
 OPTIONS_TRADE_SEEN_LIMIT = 4000
 OPTIONS_TRADE_FETCH_INTERVAL_MS = 2000
-OPTIONS_TRADE_STALE_MS = 10 * 60 * 1000
+OPTIONS_TRADE_STALE_MS = 20 * 60 * 1000
 _options_snapshot_lock = threading.Lock()
 _options_snapshots: dict[str, deque] = {}
 _options_snapshot_cache: dict[str, dict] = {}
@@ -89,6 +90,7 @@ _options_trade_bars: dict[str, deque] = {}
 _options_trade_seen: dict[str, dict] = {}
 _options_trade_last_fetch: dict[str, int] = {}
 _options_trade_last_update: dict[str, int] = {}
+_options_trade_last_fallback: dict[str, int] = {}
 
 
 def _env(key: str, default: str = "") -> str:
@@ -662,9 +664,9 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         trades.sort(key=lambda t: t.get("ts_ms") or 0)
         return trades
 
-    def _record_options_trade_bars(self, symbol: str, trades: list[dict]) -> None:
+    def _record_options_trade_bars(self, symbol: str, trades: list[dict]) -> bool:
         if not trades:
-            return
+            return False
         now_ms = int(time.time() * 1000)
         updated = False
         with _options_trade_lock:
@@ -694,23 +696,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 else:
                     if bars:
                         last = bars[-1]
-                        next_bucket = last["t"] + OPTIONS_TRADE_BAR_INTERVAL_MS
-                        if bucket > next_bucket:
-                            last_close = last["c"]
-                            fill_t = next_bucket
-                            while fill_t < bucket:
-                                bars.append({
-                                    "t": fill_t,
-                                    "o": last_close,
-                                    "h": last_close,
-                                    "l": last_close,
-                                    "c": last_close,
-                                    "v": 0.0,
-                                })
-                                fill_t += OPTIONS_TRADE_BAR_INTERVAL_MS
-                            open_price = last_close
-                        else:
-                            open_price = price
+                        open_price = last["c"] if bucket > last["t"] else price
                     else:
                         open_price = price
                     bars.append({
@@ -729,6 +715,51 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 bars.popleft()
             while len(bars) > OPTIONS_TRADE_MAX_BARS:
                 bars.popleft()
+        return updated
+
+    def _maybe_record_options_fallback(self, symbol: str) -> bool:
+        now_ms = int(time.time() * 1000)
+        bucket = int(now_ms // OPTIONS_TRADE_FALLBACK_INTERVAL_MS) * OPTIONS_TRADE_FALLBACK_INTERVAL_MS
+        with _options_trade_lock:
+            bars = _options_trade_bars.get(symbol)
+            last_bar_time = bars[-1]["t"] if bars else 0
+            last_close = bars[-1]["c"] if bars else None
+        if last_bar_time >= bucket:
+            return False
+        snapshot = self._fetch_options_snapshot_bybit(symbol)
+        last_price = None
+        if snapshot:
+            last_price = snapshot.get("last")
+            if last_price is None:
+                last_price = snapshot.get("mark")
+        if last_price is None:
+            last_price = last_close
+        if last_price is None:
+            return False
+        open_price = last_close if last_close is not None else float(last_price)
+        close_price = float(last_price)
+        high_price = max(open_price, close_price)
+        low_price = min(open_price, close_price)
+        with _options_trade_lock:
+            bars = _options_trade_bars.setdefault(symbol, deque())
+            if bars and bars[-1]["t"] >= bucket:
+                return False
+            bars.append({
+                "t": bucket,
+                "o": open_price,
+                "h": high_price,
+                "l": low_price,
+                "c": close_price,
+                "v": 0.0,
+            })
+            _options_trade_last_update[symbol] = now_ms
+            _options_trade_last_fallback[symbol] = now_ms
+            cutoff = now_ms - OPTIONS_TRADE_RETENTION_MIN * 60 * 1000
+            while bars and bars[0]["t"] < cutoff:
+                bars.popleft()
+            while len(bars) > OPTIONS_TRADE_MAX_BARS:
+                bars.popleft()
+        return True
 
     def _update_options_trade_bars(self, symbol: str) -> None:
         now_ms = int(time.time() * 1000)
@@ -738,8 +769,9 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 return
             _options_trade_last_fetch[symbol] = now_ms
         trades = self._fetch_options_trades_bybit(symbol)
-        if trades:
-            self._record_options_trade_bars(symbol, trades)
+        updated = self._record_options_trade_bars(symbol, trades) if trades else False
+        if not updated:
+            self._maybe_record_options_fallback(symbol)
 
     def _get_options_trade_bars(self, symbol: str) -> list[dict]:
         with _options_trade_lock:

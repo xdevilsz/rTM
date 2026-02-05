@@ -979,6 +979,13 @@
       gap: 16px;
       align-items: stretch;
     }
+    .options-right-stack {
+      width: 320px;
+      min-width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
     .options-chart-main {
       flex: 1 1 auto;
       min-width: 0;
@@ -987,8 +994,10 @@
       gap: 12px;
     }
     .options-orderbook {
-      width: 320px;
-      min-width: 280px;
+      width: 100%;
+      min-width: 0;
+      flex: 1 1 auto;
+      min-height: 0;
       background: rgba(9, 14, 22, 0.7);
       border-radius: var(--r-lg);
       border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1006,19 +1015,43 @@
     .options-trade-panel {
       flex: 1 1 360px;
     }
+    .options-order-status {
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 16px;
+    }
     .options-account-panel {
-      flex: 1 1 240px;
+      flex: 0 0 auto;
       background: rgba(9, 14, 22, 0.7);
       border-radius: var(--r-lg);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 14px;
+      padding: 10px 12px;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      position: relative;
+      min-height: 96px;
+    }
+    .options-account-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .options-account-type {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(12, 18, 28, 0.7);
+      color: var(--text);
+      font-size: 10px;
     }
     .options-account-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
     }
     .options-account-item {
@@ -1029,6 +1062,7 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
+      min-width: 0;
     }
     .options-account-label {
       font-size: 11px;
@@ -1039,6 +1073,10 @@
     .options-account-value {
       font-size: 16px;
       font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .options-positions-panel {
       flex: 1 1 360px;
@@ -1375,8 +1413,13 @@
       .options-chart-layout { flex-direction: column; }
       .options-trade-layout { flex-direction: column; }
       .options-account-grid { grid-template-columns: 1fr; }
+      .options-right-stack { width: 100%; min-width: 0; }
       .options-orderbook { width: 100%; }
       .options-chart-surface { height: 320px; }
+    }
+    @media (max-width: 1100px) {
+      .options-chart-layout { flex-direction: column; }
+      .options-right-stack { width: 100%; min-width: 0; }
     }
     .chart-trade {
       position: absolute;
@@ -2082,25 +2125,54 @@
             <div class="chart-container" id="options_chart_container"></div>
           </div>
         </div>
-        <aside class="options-orderbook">
-          <div class="orderbook-head">
-            <div class="panel-title" data-i18n="heading_options_orderbook">Options Orderbook</div>
-            <div class="orderbook-meta">
-              <span class="orderbook-asof">As of <span id="options_orderbook_asof">--</span></span>
-              <span class="badge stale" id="options_orderbook_stale">STALE</span>
+        <div class="options-right-stack">
+          <div class="options-account-panel">
+            <div class="options-positions-head">
+              <div class="panel-title" data-i18n="heading_account_summary">Account Summary</div>
+              <button id="options_refresh_account" class="btn ghost sm" data-i18n="button_refresh">Refresh</button>
+            </div>
+            <div class="options-account-meta">
+              <span class="options-account-type" id="options_account_type">--</span>
+            </div>
+          <div class="options-account-grid">
+            <div class="options-account-item">
+              <span class="options-account-label" data-i18n="label_margin_balance">Margin</span>
+              <span class="options-account-value" id="options_account_margin">--</span>
+            </div>
+            <div class="options-account-item">
+              <span class="options-account-label" data-i18n="label_wallet_balance">Wallet</span>
+              <span class="options-account-value" id="options_account_wallet">--</span>
+            </div>
+            <div class="options-account-item">
+              <span class="options-account-label" data-i18n="label_total_assets">Total Assets</span>
+              <span class="options-account-value" id="options_account_total">--</span>
+            </div>
+            <div class="options-account-item">
+              <span class="options-account-label" data-i18n="label_available_balance">Available</span>
+              <span class="options-account-value" id="options_account_available">--</span>
             </div>
           </div>
-          <div class="orderbook-table">
-            <div class="orderbook-row header">
-              <span data-i18n="label_price">Price</span>
-              <span data-i18n="label_qty">Size</span>
-              <span data-i18n="label_total">Total</span>
-            </div>
-            <div id="options_orderbook_asks" class="orderbook-section"></div>
-            <div class="orderbook-mid" id="options_orderbook_mid">--</div>
-            <div id="options_orderbook_bids" class="orderbook-section"></div>
           </div>
-        </aside>
+          <aside class="options-orderbook">
+            <div class="orderbook-head">
+              <div class="panel-title" data-i18n="heading_options_orderbook">Options Orderbook</div>
+              <div class="orderbook-meta">
+                <span class="orderbook-asof">As of <span id="options_orderbook_asof">--</span></span>
+                <span class="badge stale" id="options_orderbook_stale">STALE</span>
+              </div>
+            </div>
+            <div class="orderbook-table">
+              <div class="orderbook-row header">
+                <span data-i18n="label_price">Price</span>
+                <span data-i18n="label_qty">Size</span>
+                <span data-i18n="label_total">Total</span>
+              </div>
+              <div id="options_orderbook_asks" class="orderbook-section"></div>
+              <div class="orderbook-mid" id="options_orderbook_mid">--</div>
+              <div id="options_orderbook_bids" class="orderbook-section"></div>
+            </div>
+          </aside>
+        </div>
       </div>
       <div class="options-trade-layout">
         <div class="trade-panel options-trade-panel">
@@ -2132,26 +2204,7 @@
             <button class="buy" id="options_buy" data-i18n="button_buy">Buy</button>
             <button class="sell" id="options_sell" data-i18n="button_sell">Sell</button>
           </div>
-        </div>
-        <div class="options-account-panel">
-          <div class="options-positions-head">
-            <div class="panel-title" data-i18n="heading_account_summary">Account Summary</div>
-            <button id="options_refresh_account" class="btn ghost sm" data-i18n="button_refresh">Refresh</button>
-          </div>
-          <div class="options-account-grid">
-            <div class="options-account-item">
-              <span class="options-account-label" data-i18n="label_margin_balance">Margin</span>
-              <span class="options-account-value" id="options_account_margin">--</span>
-            </div>
-            <div class="options-account-item">
-              <span class="options-account-label" data-i18n="label_wallet_balance">Wallet</span>
-              <span class="options-account-value" id="options_account_wallet">--</span>
-            </div>
-            <div class="options-account-item">
-              <span class="options-account-label" data-i18n="label_available_balance">Available</span>
-              <span class="options-account-value" id="options_account_available">--</span>
-            </div>
-          </div>
+          <div class="options-order-status" id="options_order_status" data-i18n="options_order_idle">Ready.</div>
         </div>
         <div class="options-positions-panel">
           <div class="options-positions-head">
@@ -2439,6 +2492,8 @@
     let optionsInstrumentsLoaded = false;
     let optionsInstrumentsBase = '';
     let optionsUnderlyingPrice = {};
+    let optionsAccountInFlight = false;
+    let optionsAccountLastPayload = '';
     let overlayLines = { orders: [], be: [], liq: [] };
     let activeTool = 'cursor';
     let currentSide = 'Buy';
@@ -2501,8 +2556,12 @@
         heading_trade_history: 'Trade History (Logged)',
         options_positions_hint: 'Click "Fetch Positions" to load options positions.',
         options_positions_empty: 'No options positions.',
+        options_order_idle: 'Ready.',
+        options_order_submitting: 'Submitting order...',
+        options_order_done: 'Order submitted.',
         label_margin_balance: 'Margin',
         label_wallet_balance: 'Wallet',
+        label_total_assets: 'Total Assets',
         label_available_balance: 'Available',
         label_symbol: 'Symbol',
         label_side: 'Side',
@@ -2830,8 +2889,12 @@
         heading_trade_history: '交易历史（已记录）',
         options_positions_hint: '点击“刷新持仓”加载期权持仓。',
         options_positions_empty: '暂无期权持仓。',
+        options_order_idle: '就绪。',
+        options_order_submitting: '正在提交订单...',
+        options_order_done: '订单已提交。',
         label_margin_balance: '保证金',
         label_wallet_balance: '钱包余额',
+        label_total_assets: '总资产',
         label_available_balance: '可用余额',
         label_symbol: '交易对',
         label_side: '方向',
@@ -5707,6 +5770,17 @@
       }
     }
 
+    function setOptionsOrderStatus(message, ok = null) {
+      const el = document.getElementById('options_order_status');
+      if (!el) return;
+      el.textContent = message || '';
+      if (ok === null) {
+        el.style.color = 'var(--muted)';
+      } else {
+        el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+      }
+    }
+
     async function applyOptionsOrderPrecision(symbol) {
       if (!symbol) return;
       await ensureSymbolPrecision(symbol);
@@ -5742,6 +5816,7 @@
           return;
         }
       }
+      setOptionsOrderStatus(t('options_order_submitting'));
       try {
         const res = await fetch('/api/orders/create', {
           method: 'POST',
@@ -5759,9 +5834,12 @@
         if (!res.ok || data.error) {
           throw new Error(data.error || t('alert_order_failed'));
         }
+        const idMsg = data.order_id ? ` ${data.order_id}` : '';
+        setOptionsOrderStatus(`${t('options_order_done')}${idMsg ? ` (${idMsg})` : ''}`, true);
         fetchOrders('');
         updateOrdersOverlay();
       } catch (e) {
+        setOptionsOrderStatus(e.message || t('alert_order_failed'), false);
         alert(e.message || t('alert_order_failed'));
       }
     }
@@ -5825,28 +5903,51 @@
     async function fetchOptionsAccountSummary() {
       const marginEl = document.getElementById('options_account_margin');
       const walletEl = document.getElementById('options_account_wallet');
+      const totalEl = document.getElementById('options_account_total');
       const availEl = document.getElementById('options_account_available');
+      const typeEl = document.getElementById('options_account_type');
+      const setPlaceholders = () => {
+        if (marginEl) marginEl.textContent = '--';
+        if (walletEl) walletEl.textContent = '--';
+        if (totalEl) totalEl.textContent = '--';
+        if (availEl) availEl.textContent = '--';
+        if (typeEl) typeEl.textContent = '--';
+      };
+      if (optionsAccountInFlight) return;
+      optionsAccountInFlight = true;
       try {
         const res = await fetch('/api/account/summary', { cache: 'no-store' });
         if (!res.ok) {
-          if (marginEl) marginEl.textContent = '--';
-          if (walletEl) walletEl.textContent = '--';
-          if (availEl) availEl.textContent = '--';
+          setPlaceholders();
           return;
         }
         const data = await res.json();
+        const payload = {
+          margin_balance: data.margin_balance ?? null,
+          wallet_balance: data.wallet_balance ?? null,
+          total_assets: data.total_assets ?? null,
+          available_balance: data.available_balance ?? null,
+          currency: data.currency ?? null,
+        };
+        const payloadKey = JSON.stringify(payload);
+        if (payloadKey === optionsAccountLastPayload) return;
+        optionsAccountLastPayload = payloadKey;
         const margin = Number(data.margin_balance);
         const wallet = Number(data.wallet_balance);
+        const totalAssets = Number(data.total_assets);
         const avail = Number(data.available_balance);
         const currency = data.currency ? String(data.currency).toUpperCase() : '';
-        const fmt = (val) => Number.isFinite(val) ? `${val.toFixed(2)}${currency ? ` ${currency}` : ''}` : '--';
+        const showCurrency = currency && !['UNIFIED', 'CONTRACT', 'SPOT'].includes(currency);
+        const fmt = (val) => Number.isFinite(val) ? `${val.toFixed(2)}${showCurrency ? ` ${currency}` : ''}` : '--';
         if (marginEl) marginEl.textContent = fmt(margin);
         if (walletEl) walletEl.textContent = fmt(wallet);
+        if (totalEl) totalEl.textContent = fmt(totalAssets);
         if (availEl) availEl.textContent = fmt(avail);
+        if (typeEl) typeEl.textContent = currency || 'UNIFIED';
       } catch (err) {
-        if (marginEl) marginEl.textContent = '--';
-        if (walletEl) walletEl.textContent = '--';
-        if (availEl) availEl.textContent = '--';
+        setPlaceholders();
+      } finally {
+        optionsAccountInFlight = false;
       }
     }
 

@@ -54,6 +54,8 @@ class TradingService:
             "orderType": order_type,
             "qty": str(qty),
         }
+        if self.category == "option" and "orderLinkId" not in payload:
+            payload["orderLinkId"] = f"rtm_{int(time.time() * 1000)}_{int(time.time_ns() % 1000000)}"
         if order_type == "Limit":
             if price is None:
                 return OrderResult(ok=False, error="Limit price required")

@@ -299,6 +299,8 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
     trading_demo: bool = False
     trading_client: Optional[BybitAPIClient] = None
     trading_service: Optional[TradingService] = None
+    options_trading_client: Optional[BybitAPIClient] = None
+    options_trading_service: Optional[TradingService] = None
 
     def handle_one_request(self) -> None:
         try:
@@ -852,6 +854,38 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         if not self.trading_service:
             self.trading_service = TradingService(client, BROKER_ID, self.bybit_category)
         return self.trading_service
+
+    def _is_option_symbol(self, symbol: str) -> bool:
+        if not symbol:
+            return False
+        parts = str(symbol).split("-")
+        if len(parts) < 4:
+            return False
+        last = parts[-1].upper()
+        if last in ("C", "P"):
+            return True
+        if last in ("USDT", "USDC") and parts[-2].upper() in ("C", "P"):
+            return True
+        return False
+
+    def _normalize_option_symbol(self, symbol: str) -> str:
+        parts = str(symbol).split("-")
+        if len(parts) >= 5 and parts[-1].upper() in ("USDT", "USDC") and parts[-2].upper() in ("C", "P"):
+            return "-".join(parts[:-1])
+        return symbol
+
+    def _get_trading_service_for_symbol(self, symbol: str) -> Optional[TradingService]:
+        if not self._is_option_symbol(symbol):
+            return self._get_trading_service()
+        if not self.trading_key or not self.trading_secret:
+            return None
+        if not self.options_trading_client:
+            self.options_trading_client = BybitAPIClient(
+                self.trading_key, self.trading_secret, self.bybit_url, "option"
+            )
+        if not self.options_trading_service:
+            self.options_trading_service = TradingService(self.options_trading_client, BROKER_ID, "option")
+        return self.options_trading_service
 
     def _get_position_for_symbol(self, symbol: str) -> Optional[dict]:
         if not symbol:
@@ -2013,6 +2047,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             account = account_list[0] if account_list else {}
             total_margin = _to_float(account.get("totalMarginBalance") or account.get("accountIM"))
             total_wallet = _to_float(account.get("totalWalletBalance") or account.get("totalEquity"))
+            total_assets = _to_float(account.get("totalEquity") or account.get("totalWalletBalance"))
             total_available = _to_float(account.get("totalAvailableBalance"))
             currency = account.get("accountType") or "UNIFIED"
             if (total_margin is None or total_wallet is None or total_available is None) and account.get("coin"):
@@ -2022,6 +2057,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 total_wallet = total_wallet if total_wallet is not None else _to_float(coin.get("walletBalance"))
                 total_available = total_available if total_available is not None else _to_float(coin.get("availableToWithdraw") or coin.get("availableToBorrow"))
                 total_margin = total_margin if total_margin is not None else _to_float(coin.get("equity"))
+                total_assets = total_assets if total_assets is not None else _to_float(coin.get("equity"))
                 currency = coin.get("coin") or currency
             return self._write_json({
                 "ok": True,
@@ -2029,6 +2065,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 "asof_ms": int(time.time() * 1000),
                 "margin_balance": total_margin,
                 "wallet_balance": total_wallet,
+                "total_assets": total_assets,
                 "available_balance": total_available,
                 "currency": currency,
             }, status=200)
@@ -2416,6 +2453,8 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             cls.trading_demo = demo
             cls.trading_client = None
             cls.trading_service = None
+            cls.options_trading_client = None
+            cls.options_trading_service = None
             return self._write_json({"ok": True, "mode": mode}, status=200)
 
         if self.path == "/api/trading/disable":
@@ -2426,6 +2465,8 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             cls.trading_demo = False
             cls.trading_client = None
             cls.trading_service = None
+            cls.options_trading_client = None
+            cls.options_trading_service = None
             return self._write_json({"ok": True}, status=200)
 
         if self.path == "/api/orders/list":
@@ -2520,21 +2561,34 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 return self._write_json({"ok": False, "error": "qty must be > 0"}, status=400)
             if self.trading_mode == "close_only" and not reduce_only:
                 return self._write_json({"ok": False, "error": "close_only mode requires reduce_only"}, status=400)
-            service = self._get_trading_service()
+            service = self._get_trading_service_for_symbol(symbol)
             if not service:
                 return self._write_json({"ok": False, "error": "Trading client not configured"}, status=400)
+            order_symbol = symbol
+            option_symbol = self._is_option_symbol(symbol)
             if order_mode == "market":
-                result = service.place_order(symbol, side, qty, "Market", reduce_only=reduce_only)
+                result = service.place_order(order_symbol, side, qty, "Market", reduce_only=reduce_only)
             elif order_mode == "best":
-                result = service.place_best_bid_offer(symbol, side, qty, reduce_only=reduce_only)
+                result = service.place_best_bid_offer(order_symbol, side, qty, reduce_only=reduce_only)
             elif order_mode == "chase":
-                result = service.chase_limit(symbol, side, qty, reduce_only=reduce_only)
+                result = service.chase_limit(order_symbol, side, qty, reduce_only=reduce_only)
             elif order_mode == "limit":
                 if price is None:
                     return self._write_json({"ok": False, "error": "price required for limit"}, status=400)
-                result = service.place_order(symbol, side, qty, "Limit", price=float(price), reduce_only=reduce_only)
+                result = service.place_order(order_symbol, side, qty, "Limit", price=float(price), reduce_only=reduce_only)
             else:
                 return self._write_json({"ok": False, "error": "Unsupported order mode"}, status=400)
+            if option_symbol and not result.ok:
+                normalized = self._normalize_option_symbol(symbol)
+                if normalized != order_symbol and "symbol invalid" in (result.error or "").lower():
+                    if order_mode == "market":
+                        result = service.place_order(normalized, side, qty, "Market", reduce_only=reduce_only)
+                    elif order_mode == "best":
+                        result = service.place_best_bid_offer(normalized, side, qty, reduce_only=reduce_only)
+                    elif order_mode == "chase":
+                        result = service.chase_limit(normalized, side, qty, reduce_only=reduce_only)
+                    elif order_mode == "limit":
+                        result = service.place_order(normalized, side, qty, "Limit", price=float(price), reduce_only=reduce_only)
             if not result.ok:
                 return self._write_json({"ok": False, "error": result.error}, status=502)
             return self._write_json({"ok": True, "order_id": result.order_id}, status=200)

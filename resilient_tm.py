@@ -785,6 +785,34 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             return True
         return (now_ms - last_update) > OPTIONS_TRADE_STALE_MS
 
+    def _fetch_underlying_price(self, base: str) -> Optional[dict]:
+        if not base:
+            return None
+        base = base.upper()
+        symbols = [f"{base}USDT", f"{base}USDC"]
+        categories = []
+        if self.bybit_category in ("linear", "spot"):
+            categories.append(self.bybit_category)
+        for cat in ("linear", "spot"):
+            if cat not in categories:
+                categories.append(cat)
+        for category in categories:
+            for symbol in symbols:
+                data = self._public_get("/v5/market/tickers", {"category": category, "symbol": symbol})
+                if not data:
+                    continue
+                rows = (data.get("result") or {}).get("list") or []
+                info = rows[0] if rows else {}
+                price = _to_float(info.get("lastPrice") or info.get("markPrice") or info.get("indexPrice"))
+                if price:
+                    return {
+                        "base": base,
+                        "symbol": symbol,
+                        "category": category,
+                        "price": price,
+                    }
+        return None
+
     def _get_trading_client(self) -> Optional[BybitAPIClient]:
         if not self.trading_key or not self.trading_secret:
             return None
@@ -1946,6 +1974,50 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 "bids": norm_bids,
                 "asks": norm_asks,
                 "stale": False,
+            }, status=200)
+
+        if path == "/api/options/positions":
+            if not self.bybit_client:
+                if not self.bybit_key or not self.bybit_secret:
+                    return self._write_json({"positions": [], "error": "API credentials not set"}, status=200)
+                self.bybit_client = BybitAPIClient(
+                    self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                )
+            collected: list[dict] = []
+
+            def _merge(items: list[dict]):
+                for item in items or []:
+                    symbol = item.get("symbol") or item.get("Symbol")
+                    if not symbol:
+                        continue
+                    if not any((p.get("symbol") or p.get("Symbol")) == symbol for p in collected):
+                        collected.append(item)
+
+            _merge(self.bybit_client.fetch_positions_option(settle_coin="USDC"))
+            _merge(self.bybit_client.fetch_positions_option(settle_coin="USDT"))
+            return self._write_json({"positions": collected}, status=200)
+
+        if path == "/api/options/underlying":
+            base = query_params.get("base", [""])[0]
+            if not base:
+                return self._write_json({"ok": False, "error": "base is required"}, status=400)
+            info = self._fetch_underlying_price(base)
+            if not info:
+                return self._write_json({
+                    "ok": False,
+                    "source": "Bybit API",
+                    "asof_ms": int(time.time() * 1000),
+                    "base": base,
+                    "price": None,
+                }, status=200)
+            return self._write_json({
+                "ok": True,
+                "source": "Bybit API",
+                "asof_ms": int(time.time() * 1000),
+                "base": info.get("base"),
+                "symbol": info.get("symbol"),
+                "category": info.get("category"),
+                "price": info.get("price"),
             }, status=200)
 
         if path == "/api/options/instruments":

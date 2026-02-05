@@ -997,6 +997,39 @@
       flex-direction: column;
       gap: 10px;
     }
+    .options-trade-layout {
+      display: flex;
+      gap: 16px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+    .options-trade-panel {
+      flex: 1 1 360px;
+    }
+    .options-positions-panel {
+      flex: 1 1 360px;
+      background: rgba(9, 14, 22, 0.7);
+      border-radius: var(--r-lg);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .options-positions-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .options-positions-panel table {
+      width: 100%;
+      font-size: 12px;
+    }
+    .options-positions-panel .positions-content {
+      max-height: 280px;
+      overflow: auto;
+    }
     .orderbook-head {
       display: flex;
       align-items: center;
@@ -1306,6 +1339,7 @@
       .chart-layout { flex-direction: column; }
       .chart-bottom { flex-direction: column; }
       .options-chart-layout { flex-direction: column; }
+      .options-trade-layout { flex-direction: column; }
       .options-orderbook { width: 100%; }
       .options-chart-surface { height: 320px; }
     }
@@ -1940,6 +1974,14 @@
           <h2 data-i18n="heading_options_chart">Options Chart</h2>
         </div>
         <div class="row options-chart-controls">
+          <label class="field-group"><span data-i18n="label_base">Base</span>
+            <select id="options_chart_base" class="field sm">
+              <option value="BTC">BTC</option>
+              <option value="ETH">ETH</option>
+              <option value="SOL">SOL</option>
+              <option value="all">ALL</option>
+            </select>
+          </label>
           <label class="field-group"><span data-i18n="label_options_symbol">Options Symbol</span>
             <select id="options_chart_symbol" class="field sm"></select>
           </label>
@@ -2024,6 +2066,47 @@
             <div id="options_orderbook_bids" class="orderbook-section"></div>
           </div>
         </aside>
+      </div>
+      <div class="options-trade-layout">
+        <div class="trade-panel options-trade-panel">
+          <div class="trade-panel-head">
+            <div class="panel-title" data-i18n="trade_panel_options_title">Options Trading</div>
+          </div>
+          <div class="row">
+            <label class="field-group"><span data-i18n="label_qty">Qty</span>
+              <input id="options_order_qty" type="number" min="0" step="0.0001" value="0" class="field sm">
+            </label>
+            <label class="field-group"><span data-i18n="label_order_type">Order Type</span>
+              <select id="options_order_mode" class="field sm">
+                <option value="market" data-i18n="order_mode_market">Market</option>
+                <option value="best" data-i18n="order_mode_best">Best Bid/Offer</option>
+                <option value="chase" data-i18n="order_mode_chase">Chase Limit</option>
+                <option value="limit" data-i18n="order_mode_limit">Limit</option>
+              </select>
+            </label>
+            <label class="field-group" id="options_price_row"><span data-i18n="label_price">Price</span>
+              <input id="options_order_price" type="number" min="0" step="0.01" value="" class="field sm">
+            </label>
+            <label class="switch">
+              <input id="options_reduce_only" type="checkbox">
+              <span class="slider"></span>
+              <span class="label" data-i18n="label_reduce_only">Reduce Only</span>
+            </label>
+          </div>
+          <div class="trade-actions">
+            <button class="buy" id="options_buy" data-i18n="button_buy">Buy</button>
+            <button class="sell" id="options_sell" data-i18n="button_sell">Sell</button>
+          </div>
+        </div>
+        <div class="options-positions-panel">
+          <div class="options-positions-head">
+            <div class="panel-title" data-i18n="heading_options_positions">Options Positions</div>
+            <button id="options_refresh_positions" class="btn ghost sm" data-i18n="button_fetch_options_positions">Fetch Positions</button>
+          </div>
+          <div id="options_positions_content" class="positions-content">
+            <div class="muted" data-i18n="options_positions_hint">Click "Fetch Positions" to load options positions.</div>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -2299,6 +2382,8 @@
     let optionsChartRefreshing = false;
     let optionsInstruments = [];
     let optionsInstrumentsLoaded = false;
+    let optionsInstrumentsBase = '';
+    let optionsUnderlyingPrice = {};
     let overlayLines = { orders: [], be: [], liq: [] };
     let activeTool = 'cursor';
     let currentSide = 'Buy';
@@ -2345,6 +2430,9 @@
         heading_trade_consistency: 'Trade Consistency',
         heading_options_chart: 'Options Chart',
         heading_options_orderbook: 'Options Orderbook',
+        heading_options_positions: 'Options Positions',
+        trade_panel_options_title: 'Options Trading',
+        label_base: 'Base',
         label_expiry: 'Expiry',
         label_option_type: 'Call/Put',
         label_total: 'Total',
@@ -2355,6 +2443,8 @@
         label_trades_per_hour: 'Trades / Hour',
         label_logged_trades: 'Logged Trades',
         heading_trade_history: 'Trade History (Logged)',
+        options_positions_hint: 'Click "Fetch Positions" to load options positions.',
+        options_positions_empty: 'No options positions.',
         label_symbol: 'Symbol',
         label_side: 'Side',
         side_buy: 'Buy',
@@ -2488,6 +2578,7 @@
         chart_zoom_hint: 'Auto refresh paused while zooming. Re-enable auto refresh to keep updating.',
         heading_current_positions: 'Current Positions',
         button_fetch_positions: 'Fetch Current Positions',
+        button_fetch_options_positions: 'Fetch Positions',
         positions_hint: 'Click "Refresh Positions" to load current positions.',
         heading_active_orders: 'Active Orders',
         button_fetch_orders: 'Fetch Active Orders',
@@ -2663,6 +2754,9 @@
         heading_trade_consistency: '交易一致性',
         heading_options_chart: '期权图表',
         heading_options_orderbook: '期权盘口',
+        heading_options_positions: '期权持仓',
+        trade_panel_options_title: '期权交易',
+        label_base: '标的',
         label_expiry: '到期日',
         label_option_type: '看涨/看跌',
         label_total: '累计',
@@ -2673,6 +2767,8 @@
         label_trades_per_hour: '每小时交易数',
         label_logged_trades: '记录交易数',
         heading_trade_history: '交易历史（已记录）',
+        options_positions_hint: '点击“刷新持仓”加载期权持仓。',
+        options_positions_empty: '暂无期权持仓。',
         label_symbol: '交易对',
         label_side: '方向',
         side_buy: '买',
@@ -2806,6 +2902,7 @@
         chart_zoom_hint: '缩放时已暂停自动刷新，需要时请重新开启自动刷新。',
         heading_current_positions: '当前持仓',
         button_fetch_positions: '刷新持仓',
+        button_fetch_options_positions: '刷新持仓',
         positions_hint: '点击“刷新持仓”加载当前持仓。',
         heading_active_orders: '活跃订单',
         button_fetch_orders: '刷新活跃订单',
@@ -3450,6 +3547,8 @@
             if (target === 'options-chart') {
               state.optionsChartVisible = true;
               ensureOptionsChartReady();
+              fetchOptionsPositions();
+              applyOptionsOrderPrecision(getOptionsChartSymbol());
             } else {
               state.optionsChartVisible = false;
               if (optionsChartTimer) {
@@ -4741,6 +4840,17 @@
       }
     }
 
+    function syncOptionsTradingState() {
+      const reduceOnly = document.getElementById('options_reduce_only');
+      if (!reduceOnly) return;
+      if (state.tradingMode === 'close_only') {
+        reduceOnly.checked = true;
+        reduceOnly.disabled = true;
+      } else {
+        reduceOnly.disabled = false;
+      }
+    }
+
     function updateChartOrderMode() {
       const mode = document.getElementById('chart_order_mode').value;
       const priceRow = document.getElementById('chart_price_row');
@@ -4941,6 +5051,7 @@
         }
         updateTradingFormState();
         syncChartTradingState();
+        syncOptionsTradingState();
       } catch (e) {}
     }
 
@@ -4984,6 +5095,8 @@
         document.getElementById('trade_demo').checked = false;
         setTradeStatus(`${t('status_trading_enabled')} (${mode.replace('_', '/')} ${currentLang === 'zh' ? '模式' : 'mode'}).`, true);
         updateTradingFormState();
+        syncChartTradingState();
+        syncOptionsTradingState();
         fetchOrders('');
         document.getElementById('trading_modal').classList.remove('active');
       } catch (e) {
@@ -5004,6 +5117,8 @@
         setTradeStatus(t('status_trading_disabled'), false);
         document.getElementById('open_trading_modal').textContent = t('button_enable_trading');
         state.ordersLoaded = false;
+        syncChartTradingState();
+        syncOptionsTradingState();
       } catch (e) {
         alert(e.message || t('alert_disable_failed'));
       }
@@ -5424,12 +5539,45 @@
       return select ? (select.value || '').trim().toUpperCase() : '';
     }
 
+    function getOptionsBase() {
+      const select = document.getElementById('options_chart_base');
+      return select ? (select.value || 'BTC').trim().toUpperCase() : 'BTC';
+    }
+
     function normalizeOptionType(value) {
       const raw = String(value || '').trim().toUpperCase();
       if (!raw) return '';
       if (raw.startsWith('C')) return 'Call';
       if (raw.startsWith('P')) return 'Put';
       return raw.charAt(0) + raw.slice(1).toLowerCase();
+    }
+
+    function parseOptionStrike(symbol) {
+      const parts = String(symbol || '').split('-');
+      if (parts.length < 4) return null;
+      const strike = Number(parts[2]);
+      return Number.isFinite(strike) ? strike : null;
+    }
+
+    function getUnderlyingPrice(base) {
+      return optionsUnderlyingPrice[base] || null;
+    }
+
+    async function loadOptionsUnderlying(base) {
+      if (!base || base === 'ALL') return null;
+      if (optionsUnderlyingPrice[base]) return optionsUnderlyingPrice[base];
+      try {
+        const res = await fetch(`/api/options/underlying?base=${encodeURIComponent(base)}`, { cache: 'no-store' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data && data.ok && Number.isFinite(data.price)) {
+          optionsUnderlyingPrice[base] = Number(data.price);
+          return optionsUnderlyingPrice[base];
+        }
+      } catch (err) {
+        return null;
+      }
+      return null;
     }
 
     function normalizeExpiryLabel(value) {
@@ -5453,19 +5601,160 @@
       if (!symbolSelect || !expirySelect || !typeSelect) return;
       const expiry = expirySelect.value || 'all';
       const type = typeSelect.value || 'all';
+      const base = getOptionsBase();
       const filtered = optionsInstruments.filter(item => {
+        if (base !== 'ALL' && item.base && item.base.toUpperCase() !== base) return false;
         if (expiry !== 'all' && item.expiry !== expiry) return false;
         if (type !== 'all' && item.optionType !== type) return false;
         return true;
       });
-      symbolSelect.innerHTML = filtered.map(item => `<option value="${item.symbol}">${item.symbol}</option>`).join('');
+      const sorted = filtered.slice().sort((a, b) => {
+        const aUnderlying = base === 'ALL' ? getUnderlyingPrice(a.base) : getUnderlyingPrice(base);
+        const bUnderlying = base === 'ALL' ? getUnderlyingPrice(b.base) : getUnderlyingPrice(base);
+        if (aUnderlying || bUnderlying) {
+          const aStrike = parseOptionStrike(a.symbol);
+          const bStrike = parseOptionStrike(b.symbol);
+          const aDist = (Number.isFinite(aStrike) && aUnderlying)
+            ? Math.abs(aStrike - aUnderlying) / aUnderlying
+            : Number.POSITIVE_INFINITY;
+          const bDist = (Number.isFinite(bStrike) && bUnderlying)
+            ? Math.abs(bStrike - bUnderlying) / bUnderlying
+            : Number.POSITIVE_INFINITY;
+          if (aDist !== bDist) return aDist - bDist;
+        }
+        return String(a.symbol).localeCompare(String(b.symbol));
+      });
+      symbolSelect.innerHTML = sorted.map(item => `<option value="${item.symbol}">${item.symbol}</option>`).join('');
       if (!filtered.length) {
         symbolSelect.innerHTML = `<option value="">--</option>`;
         return;
       }
       if (!filtered.some(item => item.symbol === symbolSelect.value)) {
-        symbolSelect.value = filtered[0].symbol;
+        symbolSelect.value = sorted[0].symbol;
       }
+    }
+
+    function updateOptionsOrderMode() {
+      const mode = document.getElementById('options_order_mode')?.value || 'market';
+      const priceRow = document.getElementById('options_price_row');
+      if (priceRow) {
+        priceRow.style.display = mode === 'limit' ? 'block' : 'none';
+      }
+    }
+
+    async function applyOptionsOrderPrecision(symbol) {
+      if (!symbol) return;
+      await ensureSymbolPrecision(symbol);
+      const precision = getPrecisionForSymbol(symbol);
+      const priceInput = document.getElementById('options_order_price');
+      if (priceInput && precision.tickSize) priceInput.step = String(precision.tickSize);
+      const qtyInput = document.getElementById('options_order_qty');
+      if (qtyInput && precision.qtyStep) qtyInput.step = String(precision.qtyStep);
+    }
+
+    async function submitOptionsOrder(side) {
+      if (!state.tradingEnabled) {
+        alert(t('alert_trading_disabled'));
+        return;
+      }
+      const symbol = getOptionsChartSymbol();
+      if (!symbol) {
+        alert(t('alert_symbol_required'));
+        return;
+      }
+      const qty = parseFloat(document.getElementById('options_order_qty').value || '0');
+      if (!Number.isFinite(qty) || qty <= 0) {
+        alert(t('alert_qty_required'));
+        return;
+      }
+      const orderMode = document.getElementById('options_order_mode').value;
+      const reduceOnly = document.getElementById('options_reduce_only').checked || state.tradingMode === 'close_only';
+      let price = null;
+      if (orderMode === 'limit') {
+        price = parseFloat(document.getElementById('options_order_price').value || '0');
+        if (!Number.isFinite(price) || price <= 0) {
+          alert(t('alert_price_required'));
+          return;
+        }
+      }
+      try {
+        const res = await fetch('/api/orders/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol,
+            side,
+            qty,
+            order_mode: orderMode,
+            price,
+            reduce_only: reduceOnly
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || t('alert_order_failed'));
+        }
+        fetchOrders('');
+        updateOrdersOverlay();
+      } catch (e) {
+        alert(e.message || t('alert_order_failed'));
+      }
+    }
+
+    async function fetchOptionsPositions() {
+      const content = document.getElementById('options_positions_content');
+      if (!content) return;
+      try {
+        const res = await fetch('/api/options/positions', { cache: 'no-store' });
+        if (!res.ok) {
+          content.innerHTML = `<div class="muted">${currentLang === 'zh' ? '当前模式不支持持仓。' : 'Positions not available in current mode.'}</div>`;
+          return;
+        }
+        const data = await res.json();
+        const rawPositions = Array.isArray(data.positions)
+          ? data.positions
+          : (typeof data.positions === 'object' && data.positions !== null ? Object.values(data.positions) : []);
+        renderOptionsPositions(rawPositions);
+      } catch (e) {
+        content.innerHTML = `<div class="muted">${t('status_positions_error')} ${e.message}</div>`;
+      }
+    }
+
+    function renderOptionsPositions(positions) {
+      const content = document.getElementById('options_positions_content');
+      if (!content) return;
+      if (!Array.isArray(positions) || positions.length === 0) {
+        content.innerHTML = `<div class="muted">${t('options_positions_empty')}</div>`;
+        return;
+      }
+      let html = `<table><thead><tr><th>${t('positions_table_symbol')}</th><th>${t('positions_table_side')}</th><th>${t('positions_table_size')}</th><th>${t('positions_table_avg_price')}</th><th>${t('positions_table_mark_price')}</th><th>${t('positions_table_unrealised')}</th><th>${t('positions_table_realised')}</th><th>${t('positions_table_actions')}</th></tr></thead><tbody>`;
+      positions.forEach(pos => {
+        const unrealised = getPosValue(pos, ['unrealisedPnl', 'UnrealisedPnl']);
+        const realised = getPosValue(pos, ['curRealisedPnl', 'realisedPnl', 'CurRealisedPnl', 'RealisedPnl']);
+        const funding = getPosValue(pos, ['fundingFee', 'FundingFee', 'funding', 'Funding']);
+        const closed = getPosValue(pos, ['closedPnl', 'ClosedPnl', 'execPnl', 'ExecPnl']);
+        const breakEven = getPosValue(pos, ['breakEvenPrice', 'BreakEvenPrice']);
+        const realisedTip = buildPnlTooltip({ realised, funding, closed, breakEven });
+        const unrealisedClass = pnlClass(unrealised);
+        const realisedClass = pnlClass(realised);
+        const symbol = pos.symbol || pos.Symbol || '-';
+        state.positionCache[symbol] = pos;
+        html += `<tr>
+          <td>${symbol}</td>
+          <td>${pos.side || pos.Side || '-'}</td>
+          <td>${pos.size || pos.Size || 0}</td>
+          <td>${pos.avgPrice || pos.AvgPrice || 0}</td>
+          <td>${pos.markPrice || pos.MarkPrice || 0}</td>
+          <td class="tooltip-cell ${unrealisedClass}" data-tooltip="${realisedTip.unrealised}">${unrealised || 0}</td>
+          <td class="tooltip-cell ${realisedClass}" data-tooltip="${realisedTip.realised}">${realised || 0}</td>
+          <td><button class="position-manage" data-symbol="${symbol}">${t('positions_table_manage')}</button></td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      content.innerHTML = html;
+      content.querySelectorAll('.position-manage').forEach(btn => {
+        btn.addEventListener('click', () => openPositionModal(btn.dataset.symbol));
+      });
     }
 
     function rebuildOptionsFilters() {
@@ -5484,12 +5773,15 @@
     }
 
     async function loadOptionsInstruments() {
-      if (optionsInstrumentsLoaded) return;
+      const base = getOptionsBase();
+      if (optionsInstrumentsLoaded && optionsInstrumentsBase === base) return;
       optionsInstrumentsLoaded = true;
+      optionsInstrumentsBase = base;
       const note = document.getElementById('options_chart_note');
       if (note) note.textContent = t('options_chart_loading');
       try {
-        const res = await fetch('/api/options/instruments', { cache: 'no-store' });
+        const qs = base && base !== 'ALL' ? `?base=${encodeURIComponent(base)}` : '';
+        const res = await fetch(`/api/options/instruments${qs}`, { cache: 'no-store' });
         if (!res.ok) throw new Error('instrument fetch failed');
         const data = await res.json();
         const list = Array.isArray(data.instruments) ? data.instruments : [];
@@ -5497,7 +5789,14 @@
           symbol: String(item.symbol || '').toUpperCase(),
           expiry: normalizeExpiryLabel(item.expiry || ''),
           optionType: normalizeOptionType(item.optionType || item.optionsType || ''),
+          base: String(item.base || '').toUpperCase(),
         })).filter(item => item.symbol);
+        if (base === 'ALL') {
+          const bases = Array.from(new Set(optionsInstruments.map(item => item.base).filter(Boolean)));
+          await Promise.all(bases.map(loadOptionsUnderlying));
+        } else {
+          await loadOptionsUnderlying(base);
+        }
         rebuildOptionsFilters();
         if (note) note.textContent = t('options_chart_hint');
       } catch (err) {
@@ -7086,23 +7385,41 @@
     on('options_chart_interval', 'change', applyOptionsChartLocalization);
     on('options_chart_refresh', 'change', startOptionsChartPolling);
     on('options_chart_auto', 'change', startOptionsChartPolling);
+    on('options_chart_base', 'change', () => {
+      optionsInstrumentsLoaded = false;
+      optionsInstruments = [];
+      optionsChartHasLoaded = false;
+      loadOptionsInstruments().then(() => {
+        updateOptionsSymbolOptions();
+        refreshOptionsChart();
+        startOptionsOrderbook();
+        applyOptionsOrderPrecision(getOptionsChartSymbol());
+      });
+    });
     on('options_chart_symbol', 'change', () => {
       optionsChartHasLoaded = false;
       refreshOptionsChart();
       startOptionsOrderbook();
+      applyOptionsOrderPrecision(getOptionsChartSymbol());
     });
     on('options_chart_expiry', 'change', () => {
       updateOptionsSymbolOptions();
       optionsChartHasLoaded = false;
       refreshOptionsChart();
       startOptionsOrderbook();
+      applyOptionsOrderPrecision(getOptionsChartSymbol());
     });
     on('options_chart_type', 'change', () => {
       updateOptionsSymbolOptions();
       optionsChartHasLoaded = false;
       refreshOptionsChart();
       startOptionsOrderbook();
+      applyOptionsOrderPrecision(getOptionsChartSymbol());
     });
+    on('options_order_mode', 'change', updateOptionsOrderMode);
+    on('options_buy', 'click', () => submitOptionsOrder('Buy'));
+    on('options_sell', 'click', () => submitOptionsOrder('Sell'));
+    on('options_refresh_positions', 'click', fetchOptionsPositions);
     on('options_show_iv', 'change', (e) => setOptionsMetricEnabled('iv', e.target.checked));
     on('options_show_delta', 'change', (e) => setOptionsMetricEnabled('delta', e.target.checked));
     on('options_show_vega', 'change', (e) => setOptionsMetricEnabled('vega', e.target.checked));
@@ -7250,6 +7567,7 @@
     fetchMetrics();
     loadTradingStatus();
     updateTradingFormState();
+    updateOptionsOrderMode();
     initChart();
     ensureChartReady();
     setInterval(fetchStatus, 5000);

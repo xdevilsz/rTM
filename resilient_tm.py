@@ -1583,6 +1583,38 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                     continue
             return self._write_json({"ok": True, "klines": klines}, status=200)
 
+        if path == "/api/options/klines":
+            symbol = query_params.get("symbol", [""])[0]
+            interval = query_params.get("interval", ["1"])[0]
+            limit = int(query_params.get("limit", ["300"])[0])
+            if not symbol:
+                return self._write_json({"ok": False, "error": "symbol is required"}, status=400)
+            params = {
+                "category": "option",
+                "symbol": symbol,
+                "interval": interval,
+                "limit": str(min(max(limit, 1), 1000)),
+            }
+            data = self._public_get("/v5/market/kline", params)
+            if not data:
+                return self._write_json({"ok": False, "error": "options kline fetch failed"}, status=502)
+            rows = (data.get("result") or {}).get("list") or []
+            klines = []
+            for row in reversed(rows):
+                try:
+                    ts_ms = int(row[0])
+                    klines.append({
+                        "time": int(ts_ms / 1000),
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": float(row[5]),
+                    })
+                except Exception:
+                    continue
+            return self._write_json({"ok": True, "klines": klines}, status=200)
+
         if path == "/api/trades/stream":
             symbol = query_params.get("symbol", [""])[0]
             if not symbol:

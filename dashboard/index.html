@@ -946,6 +946,9 @@
       gap: 14px;
       align-items: stretch;
     }
+    .options-chart-controls {
+      align-items: flex-end;
+    }
     .chart-left {
       flex: 1 1 auto;
       display: flex;
@@ -964,6 +967,9 @@
       height: var(--chart-height);
       overflow: hidden;
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+    .options-chart-surface {
+      height: 380px;
     }
     .chart-container {
       position: absolute;
@@ -1377,6 +1383,7 @@
     <button class="tab" data-tab="analysis" data-i18n="tab_analysis">Analysis</button>
     <button class="tab" data-tab="advanced-analysis" data-i18n="tab_advanced_analysis">Advanced Analysis</button>
     <button class="tab" data-tab="chart" data-i18n="tab_chart">Chart</button>
+    <button class="tab" data-tab="options-chart" data-i18n="tab_options_chart">Options Chart</button>
     <button class="tab" data-tab="positions" data-i18n="tab_positions">Positions</button>
     <button class="tab" data-tab="resilient-maker" data-i18n="tab_resilient_maker">Resilient Maker</button>
     <button class="tab" data-tab="other-products" data-i18n="tab_other_products">Other Products</button>
@@ -1780,6 +1787,53 @@
     </section>
   </div>
 
+  <div id="panel-options-chart" class="panel">
+    <section class="card options-chart-card">
+      <div class="card-head">
+        <div>
+          <h2 data-i18n="heading_options_chart">Options Chart</h2>
+        </div>
+        <div class="row options-chart-controls">
+          <label class="field-group"><span data-i18n="label_options_symbol">Options Symbol</span>
+            <input id="options_chart_symbol" type="text" placeholder="e.g. BTC-30MAR24-70000-C" class="field sm">
+          </label>
+          <label class="field-group"><span data-i18n="label_interval">Interval</span>
+            <select id="options_chart_interval" class="field sm">
+              <option value="1">1m</option>
+              <option value="3">3m</option>
+              <option value="5">5m</option>
+              <option value="15">15m</option>
+              <option value="30">30m</option>
+              <option value="60">1h</option>
+              <option value="120">2h</option>
+              <option value="240">4h</option>
+              <option value="D">1D</option>
+            </select>
+          </label>
+          <label class="switch">
+            <input id="options_chart_auto" type="checkbox" checked>
+            <span class="slider"></span>
+            <span class="label" data-i18n="label_auto_refresh">Auto Refresh</span>
+          </label>
+          <label class="field-group"><span data-i18n="label_refresh_ms">Refresh (ms)</span>
+            <select id="options_chart_refresh" class="field sm">
+              <option value="2000" selected>2000</option>
+              <option value="5000">5000</option>
+              <option value="10000">10000</option>
+              <option value="15000">15000</option>
+            </select>
+          </label>
+          <button id="options_chart_reload" class="btn ghost sm" data-i18n="button_reload">Reload</button>
+        </div>
+      </div>
+      <div class="chart-note muted" id="options_chart_note" data-i18n="options_chart_hint">Enter an options symbol to load candles.</div>
+      <div class="chart-surface options-chart-surface">
+        <div class="chart-legend" id="optionsChartLegend"></div>
+        <div class="chart-container" id="options_chart_container"></div>
+      </div>
+    </section>
+  </div>
+
   <div id="panel-positions" class="panel">
     <h2 data-i18n="heading_current_positions">Current Positions</h2>
     <div class="controls">
@@ -1983,6 +2037,7 @@
       ordersCacheSymbol: '',
       ordersLoaded: false,
       chartVisible: false,
+      optionsChartVisible: false,
       chartLastOverlayTs: 0,
       positionSymbols: [],
       positionCache: {},
@@ -2033,6 +2088,16 @@
     let indicatorTimer = null;
     let indicatorDropdownBound = false;
     const symbolPrecision = {};
+    let optionsChart = null;
+    let optionsCandleSeries = null;
+    let optionsVolumeSeries = null;
+    let optionsChartTimer = null;
+    let optionsChartLegendEl = null;
+    let optionsChartInitAttempts = 0;
+    let optionsChartHasLoaded = false;
+    let optionsChartKlines = [];
+    let optionsChartLastSymbol = '';
+    let optionsChartLastInterval = '';
     let overlayLines = { orders: [], be: [], liq: [] };
     let activeTool = 'cursor';
     let currentSide = 'Buy';
@@ -2071,11 +2136,13 @@
         tab_analysis: 'Analysis',
         tab_advanced_analysis: 'Advanced Analysis',
         tab_chart: 'Chart',
+        tab_options_chart: 'Options Chart',
         tab_positions: 'Positions',
         tab_resilient_maker: 'Resilient Maker',
         tab_other_products: 'Other Products',
         tab_about: 'About',
         heading_trade_consistency: 'Trade Consistency',
+        heading_options_chart: 'Options Chart',
         label_consistency_score: 'Consistency Score',
         label_avg_interval: 'Avg Interval (s)',
         label_interval_std: 'Interval Std (s)',
@@ -2095,6 +2162,7 @@
         button_apply: 'Apply',
         button_export_history: 'Export History',
         button_clear_log: 'Clear Local Log',
+        options_chart_hint: 'Enter an options symbol to load candles.',
         th_time: 'Time',
         th_symbol: 'Symbol',
         th_side: 'Side',
@@ -2380,11 +2448,13 @@
         tab_analysis: '分析',
         tab_advanced_analysis: '高级分析',
         tab_chart: '图表',
+        tab_options_chart: '期权图表',
         tab_positions: '持仓',
         tab_resilient_maker: 'Resilient Maker',
         tab_other_products: '其他产品',
         tab_about: '关于',
         heading_trade_consistency: '交易一致性',
+        heading_options_chart: '期权图表',
         label_consistency_score: '一致性评分',
         label_avg_interval: '平均间隔（秒）',
         label_interval_std: '间隔标准差（秒）',
@@ -2404,6 +2474,7 @@
         button_apply: '应用',
         button_export_history: '导出历史',
         button_clear_log: '清除本地记录',
+        options_chart_hint: '输入期权交易对以加载 K 线。',
         th_time: '时间',
         th_symbol: '交易对',
         th_side: '方向',
@@ -3101,9 +3172,24 @@
             ensureChartReady();
             requestOverlayUpdate();
             ensureOrdersLoaded();
+            state.optionsChartVisible = false;
+            if (optionsChartTimer) {
+              clearInterval(optionsChartTimer);
+              optionsChartTimer = null;
+            }
           } else {
             state.chartVisible = false;
             stopTradeStream();
+            if (target === 'options-chart') {
+              state.optionsChartVisible = true;
+              ensureOptionsChartReady();
+            } else {
+              state.optionsChartVisible = false;
+              if (optionsChartTimer) {
+                clearInterval(optionsChartTimer);
+                optionsChartTimer = null;
+              }
+            }
           }
         });
       });
@@ -5065,6 +5151,199 @@
       requestOverlayUpdate();
     }
 
+    function getOptionsChartSymbol() {
+      const input = document.getElementById('options_chart_symbol');
+      return input ? (input.value || '').trim().toUpperCase() : '';
+    }
+
+    function initOptionsChart() {
+      const container = document.getElementById('options_chart_container');
+      if (!container || !window.LightweightCharts) return;
+      if (optionsChart) return;
+      if (container.clientWidth === 0 || container.clientHeight === 0) {
+        if (state.optionsChartVisible) setTimeout(initOptionsChart, 120);
+        return;
+      }
+      optionsChart = LightweightCharts.createChart(container, {
+        layout: {
+          background: { color: 'transparent' },
+          textColor: '#d6e1f0',
+          fontFamily: '"Inter", "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif'
+        },
+        grid: {
+          vertLines: { color: 'rgba(91, 110, 140, 0.18)' },
+          horzLines: { color: 'rgba(91, 110, 140, 0.18)' }
+        },
+        rightPriceScale: {
+          borderVisible: false,
+          scaleMargins: { top: 0.18, bottom: 0.2 },
+          ticksVisible: true
+        },
+        timeScale: {
+          borderVisible: false,
+          timeVisible: true,
+          rightOffset: 6,
+          barSpacing: 12,
+        },
+        crosshair: {
+          mode: LightweightCharts.CrosshairMode.Magnet,
+          vertLine: { color: 'rgba(124, 196, 255, 0.35)', width: 1, style: 1 },
+          horzLine: { color: 'rgba(124, 196, 255, 0.35)', width: 1, style: 1 },
+        },
+        localization: {
+          locale: currentLang === 'zh' ? 'zh-CN' : 'en-US',
+          timeFormatter: getChartTimeFormatter()
+        }
+      });
+      optionsCandleSeries = optionsChart.addCandlestickSeries({
+        upColor: '#27d07d',
+        downColor: '#ff6b6b',
+        borderVisible: false,
+        wickUpColor: '#35f49b',
+        wickDownColor: '#ff7b7b',
+        priceLineColor: 'rgba(124, 196, 255, 0.6)',
+        priceLineWidth: 1,
+      });
+      optionsVolumeSeries = optionsChart.addHistogramSeries({
+        color: '#3a465e',
+        priceFormat: { type: 'volume' },
+        priceScaleId: '',
+        lastValueVisible: false,
+      });
+      if (optionsVolumeSeries) {
+        optionsVolumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+      }
+      optionsChartLegendEl = document.getElementById('optionsChartLegend');
+      optionsChart.subscribeCrosshairMove(param => {
+        if (!param || param.time === undefined) {
+          updateOptionsLegendFromLatest();
+          return;
+        }
+        const candle = param.seriesData.get(optionsCandleSeries);
+        if (candle && candle.time) {
+          updateOptionsLegend(candle);
+        }
+      });
+      window.addEventListener('resize', () => {
+        applyOptionsChartSize();
+      });
+      applyOptionsChartSize();
+    }
+
+    function applyOptionsChartSize() {
+      const container = document.getElementById('options_chart_container');
+      if (!container || !optionsChart) return;
+      const width = container.clientWidth;
+      const height = Math.max(240, container.clientHeight);
+      optionsChart.applyOptions({ width, height });
+    }
+
+    function resizeOptionsChart() {
+      applyOptionsChartSize();
+    }
+
+    function updateOptionsLegend(candle) {
+      const legend = optionsChartLegendEl || document.getElementById('optionsChartLegend');
+      if (!legend || !candle) return;
+      if (!optionsChartLegendEl) optionsChartLegendEl = legend;
+      const timeLabel = candle.time ? new Date(candle.time * 1000).toLocaleString() : '-';
+      legend.innerHTML = `
+        <div class="legend-row">
+          <span class="legend-label">O</span><span class="legend-value">${formatPrice(candle.open)}</span>
+          <span class="legend-label">H</span><span class="legend-value">${formatPrice(candle.high)}</span>
+          <span class="legend-label">L</span><span class="legend-value">${formatPrice(candle.low)}</span>
+          <span class="legend-label">C</span><span class="legend-value">${formatPrice(candle.close)}</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-label">Vol</span><span class="legend-value">${formatVolume(candle.volume || 0)}</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-label legend-time">${timeLabel}</span>
+        </div>
+      `;
+    }
+
+    function updateOptionsLegendFromLatest() {
+      if (!optionsChartKlines.length) return;
+      const candle = optionsChartKlines[optionsChartKlines.length - 1];
+      updateOptionsLegend(candle);
+    }
+
+    function startOptionsChartPolling() {
+      if (optionsChartTimer) {
+        clearInterval(optionsChartTimer);
+        optionsChartTimer = null;
+      }
+      const auto = document.getElementById('options_chart_auto')?.checked;
+      if (!auto) return;
+      const refresh = parseInt(document.getElementById('options_chart_refresh')?.value || '5000', 10);
+      optionsChartTimer = setInterval(fetchOptionsKlines, isNaN(refresh) ? 5000 : refresh);
+    }
+
+    async function fetchOptionsKlines() {
+      if (!optionsCandleSeries) return;
+      const symbol = getOptionsChartSymbol();
+      const note = document.getElementById('options_chart_note');
+      if (note) note.textContent = '';
+      if (!symbol) {
+        if (note) note.textContent = t('options_chart_hint');
+        return;
+      }
+      const interval = document.getElementById('options_chart_interval')?.value || '1';
+      const isIntervalChange = symbol !== optionsChartLastSymbol || interval !== optionsChartLastInterval;
+      if (isIntervalChange) {
+        optionsChartHasLoaded = false;
+      }
+      const qs = new URLSearchParams({ symbol, interval, limit: '300' });
+      const res = await fetch(`/api/options/klines?${qs.toString()}`, { cache: 'no-store' });
+      if (!res.ok) {
+        if (note) note.textContent = currentLang === 'zh' ? '获取期权 K 线失败。' : 'Failed to fetch options klines.';
+        return;
+      }
+      const data = await res.json();
+      if (data.error || !Array.isArray(data.klines)) {
+        if (note) note.textContent = data.error || (currentLang === 'zh' ? '暂无期权 K 线数据。' : 'No options kline data available.');
+        return;
+      }
+      optionsChartKlines = data.klines;
+      optionsCandleSeries.setData(data.klines);
+      if (optionsVolumeSeries) optionsVolumeSeries.setData(buildVolumeBars(data.klines));
+      if (optionsChart && !optionsChartHasLoaded) {
+        optionsChart.timeScale().fitContent();
+      }
+      optionsChartHasLoaded = true;
+      optionsChartLastSymbol = symbol;
+      optionsChartLastInterval = interval;
+      updateOptionsLegendFromLatest();
+    }
+
+    function ensureOptionsChartReady() {
+      if (!state.optionsChartVisible) return;
+      const container = document.getElementById('options_chart_container');
+      if (!container) return;
+      const note = document.getElementById('options_chart_note');
+      if (!window.LightweightCharts) {
+        if (note) note.textContent = currentLang === 'zh' ? '正在加载图表库...' : 'Loading chart library...';
+        if (optionsChartInitAttempts < 12) {
+          optionsChartInitAttempts += 1;
+          setTimeout(ensureOptionsChartReady, 200);
+        }
+        return;
+      }
+      initOptionsChart();
+      if (!optionsChart || container.clientWidth === 0 || container.clientHeight === 0) {
+        if (optionsChartInitAttempts < 12) {
+          optionsChartInitAttempts += 1;
+          setTimeout(ensureOptionsChartReady, 120);
+        }
+        return;
+      }
+      optionsChartInitAttempts = 0;
+      resizeOptionsChart();
+      fetchOptionsKlines();
+      startOptionsChartPolling();
+    }
+
     function isStreamInterval(interval) {
       return interval === 'tick' || interval === '1s' || interval === '5s';
     }
@@ -6176,6 +6455,14 @@
     on('chart_ind_vwap', 'change', (e) => toggleIndicator('vwap', e.target.checked));
     on('chart_reload', 'click', () => {
       fetchKlines();
+    });
+    on('options_chart_reload', 'click', fetchOptionsKlines);
+    on('options_chart_interval', 'change', fetchOptionsKlines);
+    on('options_chart_refresh', 'change', startOptionsChartPolling);
+    on('options_chart_auto', 'change', startOptionsChartPolling);
+    on('options_chart_symbol', 'change', fetchOptionsKlines);
+    on('options_chart_symbol', 'keydown', (e) => {
+      if (e.key === 'Enter') fetchOptionsKlines();
     });
     document.querySelectorAll('.tf-btn').forEach(btn => {
       btn.addEventListener('click', () => setActiveInterval(btn.dataset.interval));

@@ -31,6 +31,12 @@
       --chart-height: 460px;
       --font-sans: "Space Grotesk", "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
       --font-mono: "IBM Plex Mono", "SF Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --toolbar-pill-height: 34px;
+      --toolbar-pill-padding: 0 14px;
+      --toolbar-pill-border: rgba(255, 255, 255, 0.12);
+      --toolbar-pill-bg: rgba(255, 255, 255, 0.04);
+      --toolbar-pill-active-bg: rgba(97, 255, 214, 0.16);
+      --toolbar-pill-hover-border: rgba(97, 255, 214, 0.5);
     }
     * { box-sizing: border-box; }
     body {
@@ -734,285 +740,306 @@
       font-size: 12px;
       color: var(--warning);
     }
-    .chart-wrap {
-      height: var(--chart-height);
-      border: 1px solid var(--border);
-      border-radius: var(--r-lg);
-      background:
-        radial-gradient(520px 260px at 12% 0%, rgba(97, 255, 214, 0.08), transparent 60%),
-        radial-gradient(420px 240px at 85% 0%, rgba(255, 212, 121, 0.08), transparent 55%),
-        rgba(9, 14, 22, 0.92);
-      box-shadow: var(--sh-sm);
-      overflow: hidden;
-      padding: 0;
-      box-sizing: border-box;
-      position: relative;
-    }
-    .chart-controls-row {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    .chart-meta-row {
-      display: grid;
-      grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.6fr);
-      gap: 12px;
-      margin: 8px 0 14px;
-    }
-    .chart-meta-box {
-      border-radius: var(--r-md);
-      padding: 10px 14px;
-      border: 1px solid rgba(97, 255, 214, 0.14);
-      background: rgba(12, 18, 28, 0.6);
-      color: var(--muted);
-      font-size: 0.88rem;
-      letter-spacing: 0.02em;
-    }
-    .chart-note {
-      color: rgba(231, 255, 246, 0.7);
-      font-size: 0.85rem;
-    }
-    .chart-canvas {
-      width: calc(100% - 24px);
-      height: calc(100% - 30px);
-      margin: 12px 12px 18px;
-      position: relative;
-    }
-    .chart-drawings {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 4;
-    }
+    .chart-card { margin-bottom: 24px; }
+    .chart-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .chart-controls { align-items: center; }
     .chart-toolbar {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 12px;
-      padding: 14px 18px;
-      border: 1px solid rgba(97, 255, 214, 0.14);
+      margin: 12px 0;
       border-radius: var(--r-lg);
-      background: linear-gradient(135deg, rgba(12, 18, 28, 0.82), rgba(10, 16, 24, 0.86));
-      margin-bottom: 14px;
+      background: linear-gradient(135deg, rgba(10, 15, 22, 0.92), rgba(14, 20, 32, 0.96));
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: var(--sh-sm);
+      position: relative;
+      z-index: 1;
     }
-    .toolbar-section {
+    .toolbar-pill-group {
       display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .toolbar-row .tf-group,
+    .toolbar-row .tool-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .toolbar-row-settings {
+      align-items: flex-end;
+    }
+    .settings-group {
+      display: flex;
+      flex-wrap: wrap;
       gap: 10px;
       align-items: center;
-      flex-wrap: wrap;
     }
-    .toolbar-center {
-      flex: 1;
-      justify-content: space-between;
-    }
-    .tf-group {
-      display: inline-flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-    .tf-btn {
-      background: rgba(97, 255, 214, 0.08);
-      border: 1px solid transparent;
-      border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 11px;
-      color: var(--text);
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .tf-btn.active {
-      border-color: rgba(97, 255, 214, 0.6);
-      color: var(--accent);
-      background: rgba(97, 255, 214, 0.15);
-    }
-    .indicator-dropdown {
-      position: relative;
-    }
-    .indicator-dropdown .btn {
-      padding-right: 24px;
-    }
-    .indicator-dropdown .dropdown-menu {
-      position: absolute;
-      top: calc(100% + 6px);
-      right: 0;
-      background: rgba(9, 14, 22, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: var(--r-sm);
-      padding: 8px;
-      display: none;
-      flex-direction: column;
-      gap: 6px;
-      z-index: 20;
-    }
-    .indicator-dropdown.open .dropdown-menu {
+    .toolbar-dropdown {
       display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .indicator-dropdown label {
+    .toolbar-actions {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 11px;
-      color: var(--text);
-    }
-    .tool-group {
-      display: inline-flex;
-      gap: 6px;
       flex-wrap: wrap;
     }
+    .tool-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .dropdown { position: relative; }
+    .dropdown-toggle::after { content: "▾"; margin-left: 6px; font-size: 10px; }
+    .dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      min-width: 160px;
+      background: #0b111a;
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 8px;
+      display: none;
+      z-index: 5;
+      box-shadow: var(--sh-sm);
+    }
+    .dropdown.open .dropdown-menu { display: grid; gap: 6px; }
+    .check-pill { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text); }
+    .toolbar-dropdown .dropdown-toggle {
+      min-height: var(--toolbar-pill-height);
+      border-radius: 999px;
+      padding: var(--toolbar-pill-padding);
+      border: 1px solid var(--toolbar-pill-border);
+      background: var(--toolbar-pill-bg);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: border 0.2s ease, background 0.2s ease;
+    }
+    .chart-stream-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(15, 22, 34, 0.7);
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(49, 212, 136, 0.4);
+      color: var(--success);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(49, 212, 136, 0.08);
+      opacity: 0.6;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .live-badge.on,
+    .live-badge.active {
+      opacity: 1;
+      transform: none;
+    }
+    .tf-btn,
     .tool-btn {
       border-radius: 999px;
-      padding: 6px 10px;
-      border: 1px solid transparent;
-      background: rgba(255, 255, 255, 0.04);
+      min-height: var(--toolbar-pill-height);
+      padding: var(--toolbar-pill-padding);
+      border: 1px solid var(--toolbar-pill-border);
+      background: var(--toolbar-pill-bg);
       color: var(--text);
+      font-size: 11px;
       cursor: pointer;
-      transition: all 0.1s ease;
+      transition: border 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .tf-btn.active,
+    .tool-btn.active,
+    .side-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: 0 0 0 1px var(--focus);
     }
     .tool-btn.active {
-      border-color: rgba(97, 255, 214, 0.6);
-      color: var(--accent);
-      background: rgba(97, 255, 214, 0.1);
+      background: rgba(97, 255, 214, 0.12);
     }
     .overlay-pill-group {
-      display: inline-flex;
+      display: flex;
       gap: 8px;
       flex-wrap: wrap;
     }
     .overlay-pill {
+      position: relative;
       border-radius: 999px;
-      padding: 4px 10px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(9, 14, 22, 0.7);
-      font-size: 11px;
+      min-height: var(--toolbar-pill-height);
+      padding: var(--toolbar-pill-padding);
+      border: 1px solid var(--toolbar-pill-border);
+      background: var(--toolbar-pill-bg);
+      color: var(--muted);
+      font-size: 12px;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
+      cursor: pointer;
+      transition: border 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
     }
     .overlay-pill input {
-      margin: 0;
-    }
-    .live-badge {
-      border-radius: 999px;
-      padding: 4px 10px;
-      border: 1px solid rgba(49, 212, 136, 0.5);
-      background: rgba(49, 212, 136, 0.08);
-      color: var(--success);
-      letter-spacing: 0.08em;
-      font-size: 10px;
-      text-transform: uppercase;
-      transition: opacity 0.2s ease;
+      position: absolute;
+      width: 1px;
+      height: 1px;
       opacity: 0;
+      pointer-events: none;
     }
-    .live-badge.active {
-      opacity: 1;
+    .overlay-pill.active,
+    .overlay-pill:has(input:checked) {
+      border-color: var(--accent);
+      background: var(--toolbar-pill-active-bg);
+      color: var(--accent);
+      box-shadow: 0 0 0 1px var(--focus);
+    }
+    .overlay-pill input:checked + span {
+      color: var(--accent);
+    }
+    .overlay-pill:hover {
+      border-color: var(--toolbar-pill-hover-border);
     }
     .segmented {
       display: inline-flex;
-      gap: 4px;
+      gap: 6px;
+      padding: 4px;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.02);
-      padding: 3px;
+      border: 1px solid var(--border);
+      background: rgba(15, 22, 34, 0.8);
     }
-    .segmented .side-btn {
-      border: 1px solid transparent;
-      border-radius: 999px;
-      padding: 4px 14px;
-      background: transparent;
-      color: var(--text);
+    .segmented.small { padding: 2px; }
+    .segmented .btn { border-radius: 999px; }
+    .chart-note {
+      margin: 2px 0 12px;
       font-size: 12px;
-      cursor: pointer;
+      color: var(--muted);
     }
-    .segmented .side-btn.active {
-      background: rgba(97, 255, 214, 0.15);
-      border-color: rgba(97, 255, 214, 0.4);
-      color: var(--accent);
+    .chart-layout {
+      display: flex;
+      gap: 14px;
+      align-items: stretch;
     }
-    .segmented.small .side-btn,
-    .segmented.small .btn {
-      padding: 4px 10px;
+    .chart-left {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
     }
     .chart-surface {
       position: relative;
       border-radius: var(--r-lg);
-      border: 1px solid rgba(97, 255, 214, 0.14);
-      background: #0c131e;
-      min-height: calc(var(--chart-height));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        radial-gradient(circle at 20% 20%, rgba(97, 255, 214, 0.12), transparent 45%),
+        radial-gradient(circle at 80% 0%, rgba(255, 212, 121, 0.12), transparent 50%),
+        #060b13;
+      height: var(--chart-height);
       overflow: hidden;
-      box-shadow: var(--sh-sm);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
     }
     .chart-container {
-      position: relative;
+      position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
+      z-index: 1;
     }
     .chart-legend {
       position: absolute;
       top: 12px;
       left: 12px;
-      background: rgba(7, 10, 18, 0.92);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 3;
       padding: 12px 14px;
       border-radius: var(--r-md);
-      font-size: 12px;
-      color: var(--text);
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      pointer-events: none;
+      background: rgba(9, 13, 20, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: var(--sh-sm);
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(10px);
+      min-width: 220px;
+      font-size: 12px;
+      line-height: 1.3;
+      pointer-events: none;
     }
     .chart-legend .legend-row {
       display: flex;
       gap: 10px;
-      align-items: center;
       flex-wrap: wrap;
       justify-content: space-between;
     }
     .chart-legend .legend-label {
       color: var(--muted);
-      font-size: 11px;
       letter-spacing: 0.04em;
-    }
-    .chart-legend .legend-value {
-      font-weight: 600;
-    }
-    .chart-legend .value-positive {
-      color: var(--success);
-    }
-    .chart-legend .value-negative {
-      color: var(--danger);
+      font-size: 11px;
     }
     .chart-legend .legend-time {
       flex: 1;
       font-size: 11px;
     }
+    .chart-legend .legend-value {
+      font-weight: 600;
+    }
+    .chart-legend .legend-value.value-positive {
+      color: var(--success);
+    }
+    .chart-legend .legend-value.value-negative {
+      color: var(--danger);
+    }
+    .chart-drawings {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+    }
     .chart-bottom {
+      margin-top: 18px;
       display: flex;
-      gap: 12px;
+      gap: 18px;
       flex-wrap: wrap;
-      margin-top: 12px;
+      align-items: stretch;
     }
     .trade-panel {
-      flex: 1 1 520px;
-      padding: 12px;
+      flex: 1 1 540px;
+      background: linear-gradient(145deg, rgba(16, 22, 34, 0.95), rgba(8, 11, 18, 0.95));
       border-radius: var(--r-lg);
-      border: 1px solid rgba(97, 255, 214, 0.14);
-      background: rgba(12, 18, 28, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 18px;
       display: grid;
-      gap: 8px;
+      gap: 12px;
+      box-shadow: var(--sh-sm);
     }
-    .trade-panel .panel-title {
-      font-size: 12px;
-      color: var(--muted);
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
+    .trade-panel-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .trade-actions {
       display: flex;
@@ -1023,14 +1050,44 @@
       align-items: center;
       gap: 10px;
     }
-    .chart-status {
-      min-width: 200px;
+    .panel-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
+    .field-group { display: grid; gap: 6px; font-size: 11px; color: var(--muted); }
+    .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+    .switch input { display: none; }
+    .switch .slider {
+      width: 36px; height: 20px; border-radius: 999px; border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.08); position: relative; transition: background 0.2s ease;
+    }
+    .switch .slider::after {
+      content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--text);
+      position: absolute; top: 2px; left: 2px; transition: transform 0.2s ease;
+    }
+    .switch input:checked + .slider { background: rgba(97, 255, 214, 0.3); }
+    .switch input:checked + .slider::after { transform: translateX(16px); }
+    .trade-advanced {
       border-radius: var(--r-md);
-      border: 1px solid rgba(97, 255, 214, 0.12);
-      padding: 12px;
-      background: rgba(9, 14, 22, 0.82);
-      font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(15, 22, 34, 0.6);
+      padding: 8px 10px;
+    }
+    .trade-advanced summary {
+      cursor: pointer;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
       color: var(--muted);
+      list-style: none;
+    }
+    .trade-advanced summary::-webkit-details-marker {
+      display: none;
+    }
+    .trade-advanced .row {
+      margin-top: 8px;
+    }
+    .price-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
     }
     .is-hidden {
       display: none !important;
@@ -1094,6 +1151,11 @@
       text-shadow:
         0 1px 1px rgba(0, 0, 0, 0.6),
         0 -1px 0 rgba(255, 255, 255, 0.04);
+    }
+    @media (max-width: 1024px) {
+      .chart-surface { height: 360px; }
+      .chart-layout { flex-direction: column; }
+      .chart-bottom { flex-direction: column; }
     }
     .chart-trade {
       position: absolute;
@@ -1241,10 +1303,17 @@
         padding: 18px;
       }
       .chart-toolbar {
-        grid-template-columns: 1fr;
+        padding: 10px;
       }
-      .chart-meta-row {
-        grid-template-columns: 1fr;
+      .toolbar-row {
+        align-items: flex-start;
+      }
+      .toolbar-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .settings-group {
+        width: 100%;
       }
       .footer-grid {
         grid-template-columns: 1fr;
@@ -1505,176 +1574,210 @@
 
 
   <div id="panel-chart" class="panel">
-    <h2 data-i18n="heading_chart">Chart</h2>
-    <div class="chart-toolbar">
-      <div class="toolbar-section toolbar-left">
-        <label><span data-i18n="label_symbol">Symbol</span>
-          <select id="chart_symbol" class="symbol-select">
-            <option value="" data-i18n="all">ALL</option>
-          </select>
-        </label>
-        <label><span data-i18n="label_custom_symbol">Search</span>
-          <input id="chart_custom_symbol" type="text" placeholder="e.g. BTCUSDT">
-        </label>
-        <button id="chart_add_symbol" data-i18n="button_add_symbol">Add</button>
-      </div>
-      <div class="toolbar-section toolbar-center">
-        <div class="tf-group">
-          <button class="tf-btn" data-interval="tick">tick</button>
-          <button class="tf-btn" data-interval="1s">1s</button>
-          <button class="tf-btn" data-interval="5s">5s</button>
-          <button class="tf-btn" data-interval="1">1m</button>
-          <button class="tf-btn" data-interval="3">3m</button>
-          <button class="tf-btn" data-interval="5">5m</button>
-          <button class="tf-btn" data-interval="15">15m</button>
-          <button class="tf-btn" data-interval="30">30m</button>
-          <button class="tf-btn" data-interval="60">1h</button>
-          <button class="tf-btn" data-interval="120">2h</button>
-          <button class="tf-btn" data-interval="240">4h</button>
-          <button class="tf-btn" data-interval="D">1D</button>
+    <section class="card chart-card">
+      <div class="card-head chart-head">
+        <div>
+          <h2 data-i18n="heading_chart">Chart</h2>
         </div>
-        <div class="indicator-dropdown" id="chart_indicator_dropdown">
-          <button class="btn ghost indicator-toggle" type="button">Indicators ▾</button>
-          <div class="dropdown-menu">
-            <label><input type="checkbox" id="chart_ind_ma"><span>MA 20</span></label>
-            <label><input type="checkbox" id="chart_ind_ema"><span>EMA 20</span></label>
-            <label><input type="checkbox" id="chart_ind_vwap"><span>VWAP</span></label>
-          </div>
-        </div>
-        <div class="tool-group">
-          <button class="tool-btn active" data-tool="cursor">Cursor</button>
-          <button class="tool-btn" data-tool="crosshair">Crosshair</button>
-          <button class="tool-btn" data-tool="hline">H-Line</button>
-          <button class="tool-btn" data-tool="rect">Rectangle</button>
-        </div>
-      </div>
-      <div class="toolbar-section toolbar-right">
-        <div class="overlay-pill-group">
-          <label class="overlay-pill">
-            <input type="checkbox" id="chart_show_orders" checked>
-            <span data-i18n="label_active_orders">Orders</span>
-          </label>
-          <label class="overlay-pill">
-            <input type="checkbox" id="chart_show_trades" checked>
-            <span data-i18n="label_trades">Trades</span>
-          </label>
-          <label class="overlay-pill">
-            <input type="checkbox" id="chart_show_breakeven" checked>
-            <span data-i18n="label_breakeven">BE</span>
-          </label>
-          <label class="overlay-pill">
-            <input type="checkbox" id="chart_show_liq" checked>
-            <span data-i18n="label_liquidation">Liq</span>
-          </label>
-        </div>
-        <div class="live-badge" id="chart_live_badge">LIVE</div>
-        <div class="segmented" id="chart_side_toggle">
-          <button class="side-btn active" data-side="Buy" id="chart_side_buy">Buy</button>
-          <button class="side-btn" data-side="Sell" id="chart_side_sell">Sell</button>
-        </div>
-      </div>
-    </div>
-    <div class="chart-controls-row">
-      <label><span data-i18n="label_interval">Interval</span>
-        <select id="chart_interval" class="is-hidden">
-          <option value="tick">Tick</option>
-          <option value="1s">1s</option>
-          <option value="5s">5s</option>
-          <option value="1">1m</option>
-          <option value="3">3m</option>
-          <option value="5">5m</option>
-          <option value="15">15m</option>
-          <option value="30">30m</option>
-          <option value="60">1h</option>
-          <option value="120">2h</option>
-          <option value="240">4h</option>
-          <option value="D">1D</option>
-        </select>
-      </label>
-      <label><span data-i18n="label_refresh_ms">Refresh (ms)</span>
-        <select id="chart_refresh">
-          <option value="250">250</option>
-          <option value="500" selected>500</option>
-          <option value="1000">1000</option>
-          <option value="2000">2000</option>
-          <option value="5000">5000</option>
-          <option value="10000">10000</option>
-          <option value="15000">15000</option>
-        </select>
-      </label>
-      <label class="check">
-        <input id="chart_auto" type="checkbox" checked>
-        <span data-i18n="label_auto_refresh">Auto Refresh</span>
-      </label>
-      <label class="height-control">
-        <span data-i18n="label_chart_height">Height</span>
-        <input id="chart_height" type="range" min="320" max="720" step="20" value="460">
-        <span id="chart_height_value">460px</span>
-      </label>
-      <button id="chart_reload" data-i18n="button_reload">Reload</button>
-      <button id="chart_draw_box">Draw Box</button>
-      <button id="chart_clear_drawings">Clear Drawings</button>
-    </div>
-    <div class="chart-meta-row">
-      <div class="chart-meta-box" id="chart_status">Select a symbol to load klines.</div>
-      <div class="chart-meta-box chart-note" id="chart_note"></div>
-    </div>
-    <div class="chart-surface">
-      <div class="chart-legend" id="chartLegend"></div>
-      <div class="chart-container" id="chart_container">
-        <svg id="chart_drawings" class="chart-drawings" width="100%" height="100%"></svg>
-      </div>
-    </div>
-    <div class="chart-bottom">
-      <div class="trade-panel">
-        <div class="panel-title" data-i18n="trade_panel_title">Chart Trading</div>
-        <div class="row">
-          <label><span data-i18n="label_qty">Qty</span>
-            <input id="chart_order_qty" type="number" min="0" step="0.0001" value="0" class="field sm">
-          </label>
-          <label><span data-i18n="label_order_type">Order Type</span>
-            <select id="chart_order_mode" class="field sm">
-              <option value="market" data-i18n="order_mode_market">Market</option>
-              <option value="best" data-i18n="order_mode_best">Best Bid/Offer</option>
-              <option value="chase" data-i18n="order_mode_chase">Chase Limit</option>
-              <option value="limit" data-i18n="order_mode_limit">Limit</option>
+        <div class="row chart-controls">
+          <label class="field-group"><span data-i18n="label_symbol">Symbol</span>
+            <select id="chart_symbol" class="symbol-select field sm">
+              <option value="" data-i18n="all">ALL</option>
             </select>
           </label>
-          <label id="chart_price_row"><span data-i18n="label_price">Price</span>
-            <input id="chart_order_price" type="number" min="0" step="0.01" value="" class="field sm">
+          <label class="field-group"><span data-i18n="label_custom_symbol">Search</span>
+            <input id="chart_custom_symbol" type="text" placeholder="e.g. BTCUSDT" class="field sm">
           </label>
-          <label class="check">
-            <input id="chart_reduce_only" type="checkbox">
-            <span data-i18n="label_reduce_only">Reduce Only</span>
-          </label>
-        </div>
-        <div class="row quick-panel">
-          <label><span>Quick Qty</span>
-            <input id="quickQtyMax" type="number" min="0" step="0.0001" class="field sm" placeholder="Max">
-          </label>
-          <div class="segmented small" id="quickQtyPresets">
-            <button class="btn sm ghost" data-pct="25">25%</button>
-            <button class="btn sm ghost" data-pct="50">50%</button>
-            <button class="btn sm ghost" data-pct="75">75%</button>
-            <button class="btn sm ghost" data-pct="100">100%</button>
-          </div>
-          <button id="quickBuy" class="btn primary sm">Buy MKT</button>
-          <button id="quickSell" class="btn danger sm">Sell MKT</button>
-        </div>
-        <div class="row">
-          <label><span>BE Price</span>
-            <input id="bePriceInput" type="number" min="0" step="0.01" class="field sm" placeholder="Break-even">
-          </label>
-          <label><span>Liq Price</span>
-            <input id="liqPriceInput" type="number" min="0" step="0.01" class="field sm" placeholder="Liquidation">
-          </label>
-        </div>
-        <div class="trade-actions">
-          <button class="buy" id="chart_buy" data-i18n="button_buy">Buy</button>
-          <button class="sell" id="chart_sell" data-i18n="button_sell">Sell</button>
+          <button id="chart_add_symbol" class="btn ghost sm" data-i18n="button_add_symbol">Add</button>
         </div>
       </div>
-    </div>
+
+      <div class="chart-toolbar">
+        <div class="toolbar-pill-group">
+          <div class="toolbar-row toolbar-row-timeframes">
+            <div class="tf-group">
+              <button class="btn ghost sm tf-btn" data-interval="tick">tick</button>
+              <button class="btn ghost sm tf-btn" data-interval="1s">1s</button>
+              <button class="btn ghost sm tf-btn" data-interval="5s">5s</button>
+              <button class="btn ghost sm tf-btn" data-interval="1">1m</button>
+              <button class="btn ghost sm tf-btn" data-interval="3">3m</button>
+              <button class="btn ghost sm tf-btn" data-interval="5">5m</button>
+              <button class="btn ghost sm tf-btn" data-interval="15">15m</button>
+              <button class="btn ghost sm tf-btn" data-interval="30">30m</button>
+              <button class="btn ghost sm tf-btn" data-interval="60">1h</button>
+              <button class="btn ghost sm tf-btn" data-interval="120">2h</button>
+              <button class="btn ghost sm tf-btn" data-interval="240">4h</button>
+              <button class="btn ghost sm tf-btn" data-interval="D">1D</button>
+            </div>
+            <div class="toolbar-dropdown dropdown indicator-dropdown" id="chart_indicator_dropdown">
+              <button class="btn ghost sm dropdown-toggle indicator-toggle" type="button">Indicators</button>
+              <div class="dropdown-menu">
+                <label class="check-pill">
+                  <input type="checkbox" id="chart_ind_ma">
+                  <span>MA 20</span>
+                </label>
+                <label class="check-pill">
+                  <input type="checkbox" id="chart_ind_ema">
+                  <span>EMA 20</span>
+                </label>
+                <label class="check-pill">
+                  <input type="checkbox" id="chart_ind_vwap">
+                  <span>VWAP</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="toolbar-row toolbar-row-tools">
+            <div class="tool-group">
+              <button class="btn ghost sm tool-btn active" data-tool="cursor">Cursor</button>
+              <button class="btn ghost sm tool-btn" data-tool="crosshair">Crosshair</button>
+              <button class="btn ghost sm tool-btn" data-tool="hline">H-Line</button>
+              <button class="btn ghost sm tool-btn" data-tool="rect">Rectangle</button>
+            </div>
+            <div class="toolbar-actions">
+              <div class="live-badge" id="chart_live_badge">LIVE</div>
+              <div class="chart-stream-status" id="chart_status" data-i18n="chart_hint">Select a symbol to load klines.</div>
+            </div>
+          </div>
+          <div class="toolbar-row toolbar-row-overlays">
+            <div class="overlay-pill-group">
+              <label class="overlay-pill">
+                <input type="checkbox" id="chart_show_orders" checked>
+                <span data-i18n="label_active_orders">Orders</span>
+              </label>
+              <label class="overlay-pill">
+                <input type="checkbox" id="chart_show_trades" checked>
+                <span data-i18n="label_trades">Trades</span>
+              </label>
+              <label class="overlay-pill">
+                <input type="checkbox" id="chart_show_breakeven" checked>
+                <span data-i18n="label_breakeven">BE</span>
+              </label>
+              <label class="overlay-pill">
+                <input type="checkbox" id="chart_show_liq" checked>
+                <span data-i18n="label_liquidation">Liq</span>
+              </label>
+            </div>
+            <div class="segmented" id="chart_side_toggle">
+              <button class="btn sm side-btn active" data-side="Buy" id="chart_side_buy">Buy</button>
+              <button class="btn sm side-btn" data-side="Sell" id="chart_side_sell">Sell</button>
+            </div>
+          </div>
+          <div class="toolbar-row toolbar-row-settings">
+            <div class="settings-group">
+              <label class="field-group"><span data-i18n="label_interval">Interval</span>
+                <select id="chart_interval" class="field sm is-hidden">
+                  <option value="tick">Tick</option>
+                  <option value="1s">1s</option>
+                  <option value="5s">5s</option>
+                  <option value="1">1m</option>
+                  <option value="3">3m</option>
+                  <option value="5">5m</option>
+                  <option value="15">15m</option>
+                  <option value="30">30m</option>
+                  <option value="60">1h</option>
+                  <option value="120">2h</option>
+                  <option value="240">4h</option>
+                  <option value="D">1D</option>
+                </select>
+              </label>
+              <label class="field-group"><span data-i18n="label_refresh_ms">Refresh (ms)</span>
+                <select id="chart_refresh" class="field sm">
+                  <option value="250">250</option>
+                  <option value="500">500</option>
+                  <option value="1000">1000</option>
+                  <option value="2000" selected>2000</option>
+                  <option value="5000">5000</option>
+                  <option value="10000">10000</option>
+                  <option value="15000">15000</option>
+                </select>
+              </label>
+              <label class="switch">
+                <input id="chart_auto" type="checkbox" checked>
+                <span class="slider"></span>
+                <span class="label" data-i18n="label_auto_refresh">Auto Refresh</span>
+              </label>
+              <label class="field-group height-control">
+                <span data-i18n="label_chart_height">Height</span>
+                <input id="chart_height" type="range" min="320" max="720" step="20" value="460">
+                <span id="chart_height_value">460px</span>
+              </label>
+            </div>
+            <div class="tool-group">
+              <button id="chart_reload" class="btn ghost sm" data-i18n="button_reload">Reload</button>
+              <button id="chart_draw_box" class="btn ghost sm">Draw Box</button>
+              <button id="chart_clear_drawings" class="btn ghost sm">Clear Drawings</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-note muted" id="chart_note"></div>
+
+      <div class="chart-layout">
+        <div class="chart-left">
+          <div class="chart-surface">
+            <div class="chart-legend" id="chartLegend"></div>
+            <div class="chart-container" id="chart_container"></div>
+            <svg id="chart_drawings" class="chart-drawings" width="100%" height="100%"></svg>
+          </div>
+
+          <div class="chart-bottom">
+            <div class="trade-panel">
+              <div class="trade-panel-head">
+                <div class="panel-title" data-i18n="trade_panel_title">Chart Trading</div>
+              </div>
+              <div class="row">
+                <label class="field-group"><span data-i18n="label_qty">Qty</span>
+                  <input id="chart_order_qty" type="number" min="0" step="0.0001" value="0" class="field sm">
+                </label>
+                <label class="field-group"><span data-i18n="label_order_type">Order Type</span>
+                  <select id="chart_order_mode" class="field sm">
+                    <option value="market" data-i18n="order_mode_market">Market</option>
+                    <option value="best" data-i18n="order_mode_best">Best Bid/Offer</option>
+                    <option value="chase" data-i18n="order_mode_chase">Chase Limit</option>
+                    <option value="limit" data-i18n="order_mode_limit">Limit</option>
+                  </select>
+                </label>
+                <label class="field-group" id="chart_price_row"><span data-i18n="label_price">Price</span>
+                  <input id="chart_order_price" type="number" min="0" step="0.01" value="" class="field sm">
+                </label>
+                <label class="switch">
+                  <input id="chart_reduce_only" type="checkbox">
+                  <span class="slider"></span>
+                  <span class="label" data-i18n="label_reduce_only">Reduce Only</span>
+                </label>
+              </div>
+              <div class="row quick-panel">
+                <label class="field-group"><span>Quick Qty</span>
+                  <input id="quickQtyMax" type="number" min="0" step="0.0001" class="field sm" placeholder="Max">
+                </label>
+                <div class="segmented small" id="quickQtyPresets">
+                  <button class="btn sm ghost" data-pct="25">25%</button>
+                  <button class="btn sm ghost" data-pct="50">50%</button>
+                  <button class="btn sm ghost" data-pct="75">75%</button>
+                  <button class="btn sm ghost" data-pct="100">100%</button>
+                </div>
+                <button id="quickBuy" class="btn primary sm">Buy MKT</button>
+                <button id="quickSell" class="btn danger sm">Sell MKT</button>
+              </div>
+              <div class="row">
+                <label class="field-group"><span>BE Price</span>
+                  <input id="bePriceInput" type="number" min="0" step="0.01" class="field sm" placeholder="Break-even">
+                </label>
+                <label class="field-group"><span>Liq Price</span>
+                  <input id="liqPriceInput" type="number" min="0" step="0.01" class="field sm" placeholder="Liquidation">
+                </label>
+              </div>
+              <div class="trade-actions">
+                <button class="buy" id="chart_buy" data-i18n="button_buy">Buy</button>
+                <button class="sell" id="chart_sell" data-i18n="button_sell">Sell</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div id="panel-positions" class="panel">
@@ -1909,6 +2012,8 @@
     let streamCandles = [];
     let tickPoints = [];
     let tickUpdateQueued = false;
+    let chartInitAttempts = 0;
+    let streamRetryTimer = null;
     let suppressRangeTracking = false;
     let chartKlinesCache = [];
     let drawMode = null;
@@ -4714,6 +4819,10 @@
       const container = document.getElementById('chart_container');
       if (!container || !window.LightweightCharts) return;
       if (chart) return;
+      if (container.clientWidth === 0 || container.clientHeight === 0) {
+        if (state.chartVisible) setTimeout(initChart, 120);
+        return;
+      }
       chart = LightweightCharts.createChart(container, {
         layout: {
           background: { color: 'transparent' },
@@ -4925,16 +5034,83 @@
 
 
     function ensureChartReady() {
+      if (!state.chartVisible) return;
+      const container = document.getElementById('chart_container');
+      if (!container) return;
+      if (!window.LightweightCharts) {
+        const status = document.getElementById('chart_status');
+        if (status) {
+          status.textContent = currentLang === 'zh' ? '正在加载图表库...' : 'Loading chart library...';
+        }
+        if (chartInitAttempts < 12) {
+          chartInitAttempts += 1;
+          setTimeout(ensureChartReady, 200);
+        }
+        return;
+      }
       initChart();
-      requestAnimationFrame(() => {
-        resizeChart();
-        fetchKlines();
-        startChartPolling();
-      });
+      if (!chart || container.clientWidth === 0 || container.clientHeight === 0) {
+        if (chartInitAttempts < 12) {
+          chartInitAttempts += 1;
+          setTimeout(ensureChartReady, 120);
+        }
+        return;
+      }
+      chartInitAttempts = 0;
+      resizeChart();
+      fetchKlines();
+      startChartPolling();
+      requestOverlayUpdate();
     }
 
     function isStreamInterval(interval) {
       return interval === 'tick' || interval === '1s' || interval === '5s';
+    }
+
+    function setLiveBadge(interval) {
+      const badge = document.getElementById('chart_live_badge');
+      if (!badge) return;
+      badge.classList.toggle('on', isStreamInterval(interval));
+    }
+
+    function setActiveInterval(interval, opts = {}) {
+      const select = document.getElementById('chart_interval');
+      if (select) select.value = interval;
+      document.querySelectorAll('.tf-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.interval === interval);
+      });
+      setLiveBadge(interval);
+      if (opts.skipFetch) return;
+      fetchKlines();
+      applyChartLocalization();
+      startChartPolling();
+    }
+
+    function setActiveTool(tool) {
+      activeTool = tool;
+      document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tool === tool);
+      });
+      if (tool === 'rect') {
+        setDrawMode('box');
+      } else if (drawMode) {
+        setDrawMode(null);
+      }
+      if (!chart) return;
+      if (tool === 'crosshair') {
+        chart.applyOptions({ crosshair: { vertLine: { visible: true }, horzLine: { visible: true } } });
+      } else if (tool === 'cursor') {
+        chart.applyOptions({ crosshair: { vertLine: { visible: false }, horzLine: { visible: false } } });
+      } else {
+        chart.applyOptions({ crosshair: { vertLine: { visible: true }, horzLine: { visible: true } } });
+      }
+    }
+
+    function setActiveSide(side) {
+      currentSide = side;
+      document.querySelectorAll('.side-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.side === side);
+      });
     }
 
     function setChartSeriesMode(interval) {
@@ -5748,6 +5924,9 @@
 
     loadHistory();
     setLanguage('zh');
+    setActiveInterval('1', { skipFetch: true });
+    setActiveTool('cursor');
+    setActiveSide('Buy');
     updateChartHeight(460);
     updateChartOrderMode();
     updateSymbolOptions();
@@ -5857,10 +6036,8 @@
       updateOrdersOverlay();
     });
     on('chart_interval', 'change', () => {
-      fetchKlines();
+      setActiveInterval(document.getElementById('chart_interval').value);
     });
-    on('chart_interval', 'change', applyChartLocalization);
-    on('chart_interval', 'change', startChartPolling);
     on('chart_refresh', 'change', startChartPolling);
     on('chart_auto', 'change', startChartPolling);
     on('chart_show_breakeven', 'change', requestOverlayUpdate);
@@ -5872,6 +6049,15 @@
     on('chart_ind_vwap', 'change', (e) => toggleIndicator('vwap', e.target.checked));
     on('chart_reload', 'click', () => {
       fetchKlines();
+    });
+    document.querySelectorAll('.tf-btn').forEach(btn => {
+      btn.addEventListener('click', () => setActiveInterval(btn.dataset.interval));
+    });
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => setActiveTool(btn.dataset.tool));
+    });
+    document.querySelectorAll('.side-btn').forEach(btn => {
+      btn.addEventListener('click', () => setActiveSide(btn.dataset.side));
     });
     const drawSvg = document.getElementById('chart_drawings');
     if (drawSvg) {

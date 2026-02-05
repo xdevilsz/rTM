@@ -5200,17 +5200,31 @@
     }
 
     function startTradeStream(interval) {
+      if (chartTimer) {
+        clearInterval(chartTimer);
+        chartTimer = null;
+      }
       stopTradeStream();
       const symbol = getChartSymbol();
       if (!symbol) return;
-      streamCandles = [];
       state.streamInterval = interval;
-      if (volumeSeries) volumeSeries.setData([]);
-      if (interval === 'tick') {
-        tickPoints = [];
-        tickSeries.setData([]);
-      } else {
-        candleSeries.setData([]);
+      const bucketSeconds = getIntervalSeconds(interval);
+      const useStreamOnly = isStreamInterval(interval);
+      if (useStreamOnly) {
+        streamCandles = [];
+        lastStreamCandle = null;
+        lastStreamBucket = null;
+        if (volumeSeries) volumeSeries.setData([]);
+        if (interval === 'tick') {
+          tickPoints = [];
+          tickSeries.setData([]);
+        } else {
+          candleSeries.setData([]);
+        }
+      } else if (!streamCandles.length && chartKlinesCache.length) {
+        streamCandles = chartKlinesCache.slice();
+        lastStreamCandle = streamCandles[streamCandles.length - 1] || null;
+        lastStreamBucket = lastStreamCandle ? lastStreamCandle.time : null;
       }
       const status = document.getElementById('chart_status');
       tradeStream = new EventSource(`/api/trades/stream?symbol=${encodeURIComponent(symbol)}`);
@@ -5226,10 +5240,13 @@
               return time ? { time, value: t.price } : null;
             }).filter(Boolean);
             if (tickSeries) tickSeries.setData(tickPoints);
-          } else if (interval === '1s') {
-            trades.forEach(trade => applyTradeToStream(trade, 1));
-          } else if (interval === '5s') {
-            trades.forEach(trade => applyTradeToStream(trade, 5));
+          } else {
+            const minTs = lastStreamCandle ? lastStreamCandle.time : 0;
+            trades.forEach(trade => {
+              const ts = normalizeTimestamp(trade.ts || trade.time || trade.T);
+              if (!ts || ts <= minTs) return;
+              applyTradeToStream(trade, bucketSeconds || 1);
+            });
           }
         } catch (e) {}
       });
@@ -5239,10 +5256,8 @@
           const trade = JSON.parse(event.data);
           if (interval === 'tick') {
             applyTradeToTick(trade);
-          } else if (interval === '1s') {
-            applyTradeToStream(trade, 1);
-          } else if (interval === '5s') {
-            applyTradeToStream(trade, 5);
+          } else {
+            applyTradeToStream(trade, bucketSeconds || 1);
           }
         } catch (e) {}
       };
@@ -5286,6 +5301,8 @@
         if (status) status.textContent = `${symbol} · ${interval}`;
         startTradeStream(interval);
         state.chartRange = null;
+        state.lastKlineInterval = interval;
+        state.lastKlineSymbol = symbol;
         if (candleSeries) {
           candleSeries.setMarkers([]);
         }
@@ -5313,6 +5330,9 @@
       }
       suppressRangeTracking = true;
       chartKlinesCache = data.klines;
+      streamCandles = data.klines.slice();
+      lastStreamCandle = streamCandles.length ? streamCandles[streamCandles.length - 1] : null;
+      lastStreamBucket = lastStreamCandle ? lastStreamCandle.time : null;
       candleSeries.setData(data.klines);
       if (volumeSeries) volumeSeries.setData(buildVolumeBars(data.klines));
       if (data.klines.length > 0) {
@@ -5340,6 +5360,7 @@
       if (status) status.textContent = `${symbol} · ${interval} ${currentLang === 'zh' ? '周期' : 'interval'}`;
       updateLegendFromLatest();
       requestOverlayUpdate();
+      startTradeStream(interval);
     }
 
     function requestOverlayUpdate() {
@@ -5664,9 +5685,13 @@
     }
 
     function startChartPolling() {
-      if (chartTimer) clearInterval(chartTimer);
+      if (chartTimer) {
+        clearInterval(chartTimer);
+        chartTimer = null;
+      }
       const interval = document.getElementById('chart_interval').value;
       if (isStreamInterval(interval)) return;
+      if (state.streamInterval) return;
       const auto = document.getElementById('chart_auto').checked;
       if (!auto) return;
       const refresh = parseInt(document.getElementById('chart_refresh').value || '5000', 10);

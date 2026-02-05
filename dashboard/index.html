@@ -1006,6 +1006,40 @@
     .options-trade-panel {
       flex: 1 1 360px;
     }
+    .options-account-panel {
+      flex: 1 1 240px;
+      background: rgba(9, 14, 22, 0.7);
+      border-radius: var(--r-lg);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .options-account-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .options-account-item {
+      background: rgba(12, 18, 28, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .options-account-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .options-account-value {
+      font-size: 16px;
+      font-weight: 600;
+    }
     .options-positions-panel {
       flex: 1 1 360px;
       background: rgba(9, 14, 22, 0.7);
@@ -1340,6 +1374,7 @@
       .chart-bottom { flex-direction: column; }
       .options-chart-layout { flex-direction: column; }
       .options-trade-layout { flex-direction: column; }
+      .options-account-grid { grid-template-columns: 1fr; }
       .options-orderbook { width: 100%; }
       .options-chart-surface { height: 320px; }
     }
@@ -2098,6 +2133,26 @@
             <button class="sell" id="options_sell" data-i18n="button_sell">Sell</button>
           </div>
         </div>
+        <div class="options-account-panel">
+          <div class="options-positions-head">
+            <div class="panel-title" data-i18n="heading_account_summary">Account Summary</div>
+            <button id="options_refresh_account" class="btn ghost sm" data-i18n="button_refresh">Refresh</button>
+          </div>
+          <div class="options-account-grid">
+            <div class="options-account-item">
+              <span class="options-account-label" data-i18n="label_margin_balance">Margin</span>
+              <span class="options-account-value" id="options_account_margin">--</span>
+            </div>
+            <div class="options-account-item">
+              <span class="options-account-label" data-i18n="label_wallet_balance">Wallet</span>
+              <span class="options-account-value" id="options_account_wallet">--</span>
+            </div>
+            <div class="options-account-item">
+              <span class="options-account-label" data-i18n="label_available_balance">Available</span>
+              <span class="options-account-value" id="options_account_available">--</span>
+            </div>
+          </div>
+        </div>
         <div class="options-positions-panel">
           <div class="options-positions-head">
             <div class="panel-title" data-i18n="heading_options_positions">Options Positions</div>
@@ -2431,6 +2486,7 @@
         heading_options_chart: 'Options Chart',
         heading_options_orderbook: 'Options Orderbook',
         heading_options_positions: 'Options Positions',
+        heading_account_summary: 'Account Summary',
         trade_panel_options_title: 'Options Trading',
         label_base: 'Base',
         label_expiry: 'Expiry',
@@ -2445,6 +2501,9 @@
         heading_trade_history: 'Trade History (Logged)',
         options_positions_hint: 'Click "Fetch Positions" to load options positions.',
         options_positions_empty: 'No options positions.',
+        label_margin_balance: 'Margin',
+        label_wallet_balance: 'Wallet',
+        label_available_balance: 'Available',
         label_symbol: 'Symbol',
         label_side: 'Side',
         side_buy: 'Buy',
@@ -2579,6 +2638,7 @@
         heading_current_positions: 'Current Positions',
         button_fetch_positions: 'Fetch Current Positions',
         button_fetch_options_positions: 'Fetch Positions',
+        button_refresh: 'Refresh',
         positions_hint: 'Click "Refresh Positions" to load current positions.',
         heading_active_orders: 'Active Orders',
         button_fetch_orders: 'Fetch Active Orders',
@@ -2755,6 +2815,7 @@
         heading_options_chart: '期权图表',
         heading_options_orderbook: '期权盘口',
         heading_options_positions: '期权持仓',
+        heading_account_summary: '账户概览',
         trade_panel_options_title: '期权交易',
         label_base: '标的',
         label_expiry: '到期日',
@@ -2769,6 +2830,9 @@
         heading_trade_history: '交易历史（已记录）',
         options_positions_hint: '点击“刷新持仓”加载期权持仓。',
         options_positions_empty: '暂无期权持仓。',
+        label_margin_balance: '保证金',
+        label_wallet_balance: '钱包余额',
+        label_available_balance: '可用余额',
         label_symbol: '交易对',
         label_side: '方向',
         side_buy: '买',
@@ -2903,6 +2967,7 @@
         heading_current_positions: '当前持仓',
         button_fetch_positions: '刷新持仓',
         button_fetch_options_positions: '刷新持仓',
+        button_refresh: '刷新',
         positions_hint: '点击“刷新持仓”加载当前持仓。',
         heading_active_orders: '活跃订单',
         button_fetch_orders: '刷新活跃订单',
@@ -5757,6 +5822,34 @@
       });
     }
 
+    async function fetchOptionsAccountSummary() {
+      const marginEl = document.getElementById('options_account_margin');
+      const walletEl = document.getElementById('options_account_wallet');
+      const availEl = document.getElementById('options_account_available');
+      try {
+        const res = await fetch('/api/account/summary', { cache: 'no-store' });
+        if (!res.ok) {
+          if (marginEl) marginEl.textContent = '--';
+          if (walletEl) walletEl.textContent = '--';
+          if (availEl) availEl.textContent = '--';
+          return;
+        }
+        const data = await res.json();
+        const margin = Number(data.margin_balance);
+        const wallet = Number(data.wallet_balance);
+        const avail = Number(data.available_balance);
+        const currency = data.currency ? String(data.currency).toUpperCase() : '';
+        const fmt = (val) => Number.isFinite(val) ? `${val.toFixed(2)}${currency ? ` ${currency}` : ''}` : '--';
+        if (marginEl) marginEl.textContent = fmt(margin);
+        if (walletEl) walletEl.textContent = fmt(wallet);
+        if (availEl) availEl.textContent = fmt(avail);
+      } catch (err) {
+        if (marginEl) marginEl.textContent = '--';
+        if (walletEl) walletEl.textContent = '--';
+        if (availEl) availEl.textContent = '--';
+      }
+    }
+
     function rebuildOptionsFilters() {
       const expirySelect = document.getElementById('options_chart_expiry');
       const typeSelect = document.getElementById('options_chart_type');
@@ -6176,8 +6269,8 @@
         .filter(item => Number.isFinite(item.price) && Number.isFinite(item.size));
       parsedAsks.sort((a, b) => a.price - b.price);
       parsedBids.sort((a, b) => b.price - a.price);
-      const askRowsRaw = buildOrderbookRows(parsedAsks.slice(0, 25), 'ask');
-      const bidRows = buildOrderbookRows(parsedBids.slice(0, 25), 'bid');
+      const askRowsRaw = buildOrderbookRows(parsedAsks.slice(0, 8), 'ask');
+      const bidRows = buildOrderbookRows(parsedBids.slice(0, 8), 'bid');
       const askRows = askRowsRaw.slice().reverse();
       const bestAsk = parsedAsks.length ? parsedAsks[0].price : null;
       const bestBid = parsedBids.length ? parsedBids[0].price : null;
@@ -6265,6 +6358,7 @@
         refreshOptionsChart();
         startOptionsChartPolling();
         startOptionsOrderbook();
+        fetchOptionsAccountSummary();
       });
     }
 
@@ -7420,6 +7514,7 @@
     on('options_buy', 'click', () => submitOptionsOrder('Buy'));
     on('options_sell', 'click', () => submitOptionsOrder('Sell'));
     on('options_refresh_positions', 'click', fetchOptionsPositions);
+    on('options_refresh_account', 'click', fetchOptionsAccountSummary);
     on('options_show_iv', 'change', (e) => setOptionsMetricEnabled('iv', e.target.checked));
     on('options_show_delta', 'change', (e) => setOptionsMetricEnabled('delta', e.target.checked));
     on('options_show_vega', 'change', (e) => setOptionsMetricEnabled('vega', e.target.checked));

@@ -1968,7 +1968,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             params = {
                 "category": "option",
                 "symbol": symbol,
-                "limit": "25",
+                "limit": "8",
             }
             data = self._public_get("/v5/market/orderbook", params)
             if not data:
@@ -1997,6 +1997,40 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 "bids": norm_bids,
                 "asks": norm_asks,
                 "stale": False,
+            }, status=200)
+
+        if path == "/api/account/summary":
+            if not self.bybit_client:
+                if not self.bybit_key or not self.bybit_secret:
+                    return self._write_json({"ok": False, "error": "API credentials not set"}, status=200)
+                self.bybit_client = BybitAPIClient(
+                    self.bybit_key, self.bybit_secret, self.bybit_url, self.bybit_category
+                )
+            result = self.bybit_client.fetch_wallet_balance()
+            if not result:
+                return self._write_json({"ok": False, "error": "wallet balance unavailable"}, status=200)
+            account_list = result.get("list") or []
+            account = account_list[0] if account_list else {}
+            total_margin = _to_float(account.get("totalMarginBalance") or account.get("accountIM"))
+            total_wallet = _to_float(account.get("totalWalletBalance") or account.get("totalEquity"))
+            total_available = _to_float(account.get("totalAvailableBalance"))
+            currency = account.get("accountType") or "UNIFIED"
+            if (total_margin is None or total_wallet is None or total_available is None) and account.get("coin"):
+                coins = account.get("coin") or []
+                prefer = next((c for c in coins if str(c.get("coin", "")).upper() in ("USDT", "USDC")), None)
+                coin = prefer or (coins[0] if coins else {})
+                total_wallet = total_wallet if total_wallet is not None else _to_float(coin.get("walletBalance"))
+                total_available = total_available if total_available is not None else _to_float(coin.get("availableToWithdraw") or coin.get("availableToBorrow"))
+                total_margin = total_margin if total_margin is not None else _to_float(coin.get("equity"))
+                currency = coin.get("coin") or currency
+            return self._write_json({
+                "ok": True,
+                "source": "Bybit API",
+                "asof_ms": int(time.time() * 1000),
+                "margin_balance": total_margin,
+                "wallet_balance": total_wallet,
+                "available_balance": total_available,
+                "currency": currency,
             }, status=200)
 
         if path == "/api/options/positions":

@@ -1954,7 +1954,7 @@
               <option value="1">1m</option>
               <option value="3">3m</option>
               <option value="5">5m</option>
-              <option value="15">15m</option>
+              <option value="15" selected>15m</option>
               <option value="30">30m</option>
               <option value="60">1h</option>
               <option value="120">2h</option>
@@ -1978,9 +1978,9 @@
           <button id="options_chart_reload" class="btn ghost sm" data-i18n="button_reload">Reload</button>
         </div>
       </div>
-      <div class="chart-note muted" id="options_chart_note" data-i18n="options_chart_hint">Select an options contract to load snapshot-derived series.</div>
+      <div class="chart-note muted" id="options_chart_note" data-i18n="options_chart_hint">Select an options contract to load trade-derived candles. IV/greeks use snapshots.</div>
       <div class="options-chart-meta">
-        <span class="options-chart-source">Data: Bybit API · Snapshot-derived</span>
+        <span class="options-chart-source" id="options_chart_source_label">Charting : Bybit · Orderbook : Bybit</span>
         <span class="options-chart-asof">As of <span id="options_chart_asof">--</span></span>
         <span class="badge stale" id="options_chart_stale">STALE</span>
       </div>
@@ -2294,6 +2294,7 @@
     let optionsChartLastSymbol = '';
     let optionsChartLastInterval = '';
     let optionsSeriesData = { mark: [], iv: [], delta: [], vega: [] };
+    let optionsCandlesData = [];
     let optionsSnapshot = null;
     let optionsChartRefreshing = false;
     let optionsInstruments = [];
@@ -2366,7 +2367,7 @@
         button_apply: 'Apply',
         button_export_history: 'Export History',
         button_clear_log: 'Clear Local Log',
-        options_chart_hint: 'Select an options contract to load snapshot-derived series.',
+        options_chart_hint: 'Select an options contract to load trade-derived candles. IV/greeks use snapshots.',
         options_chart_loading: 'Loading options contracts...',
         options_chart_load_failed: 'Failed to load options contracts.',
         th_time: 'Time',
@@ -2684,7 +2685,7 @@
         button_apply: '应用',
         button_export_history: '导出历史',
         button_clear_log: '清除本地记录',
-        options_chart_hint: '选择期权合约以加载快照曲线。',
+        options_chart_hint: '选择期权合约以加载成交推导蜡烛图，IV/希腊值来自快照。',
         options_chart_loading: '正在加载期权合约...',
         options_chart_load_failed: '期权合约加载失败。',
         th_time: '时间',
@@ -3030,6 +3031,44 @@
       };
     }
 
+    function getOptionsIntervalValue() {
+      return document.getElementById('options_chart_interval')?.value || '15';
+    }
+
+    function getOptionsChartTimeFormatter() {
+      const interval = getOptionsIntervalValue();
+      const isDaily = interval === 'D';
+      const locale = currentLang === 'zh' ? 'zh-CN' : 'en-US';
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const format = isDaily
+        ? { year: 'numeric', month: 'short', day: '2-digit' }
+        : { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+      const formatter = new Intl.DateTimeFormat(locale, { ...format, timeZone });
+      return (time) => {
+        const ts = typeof time === 'object'
+          ? Date.UTC(time.year, time.month - 1, time.day)
+          : time * 1000;
+        return formatter.format(new Date(ts));
+      };
+    }
+
+    function getOptionsChartTickMarkFormatter() {
+      const interval = getOptionsIntervalValue();
+      const isDaily = interval === 'D';
+      const locale = currentLang === 'zh' ? 'zh-CN' : 'en-US';
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const format = isDaily
+        ? { year: 'numeric', month: 'short', day: '2-digit' }
+        : { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+      const formatter = new Intl.DateTimeFormat(locale, { ...format, timeZone });
+      return (time) => {
+        const ts = typeof time === 'object'
+          ? Date.UTC(time.year, time.month - 1, time.day)
+          : time * 1000;
+        return formatter.format(new Date(ts));
+      };
+    }
+
     function applyChartLocalization() {
       if (!chart) return;
       const interval = document.getElementById('chart_interval')?.value || '1';
@@ -3046,6 +3085,20 @@
           secondsVisible: isStream,
           rightOffset: isStream ? 2 : 6,
           barSpacing: isStream ? 6 : 12
+        }
+      });
+    }
+
+    function applyOptionsChartLocalization() {
+      if (!optionsChart) return;
+      optionsChart.applyOptions({
+        localization: {
+          locale: currentLang === 'zh' ? 'zh-CN' : 'en-US',
+          timeFormatter: getOptionsChartTimeFormatter()
+        },
+        timeScale: {
+          tickMarkFormatter: getOptionsChartTickMarkFormatter(),
+          timeVisible: true
         }
       });
     }
@@ -3072,6 +3125,7 @@
         renderOrders(state.ordersCache || []);
       }
       applyChartLocalization();
+      applyOptionsChartLocalization();
       const tradingBtn = document.getElementById('open_trading_modal');
       if (state.tradingEnabled) {
         setTradeStatus(`${t('status_trading_enabled')} (${state.tradingMode.replace('_', '/')} ${currentLang === 'zh' ? '模式' : 'mode'}).`, true);
@@ -5145,7 +5199,7 @@
           timeVisible: true,
           rightOffset: 6,
           barSpacing: 12,
-          tickMarkFormatter: getChartTickMarkFormatter()
+          tickMarkFormatter: getOptionsChartTickMarkFormatter()
         },
         crosshair: {
           mode: LightweightCharts.CrosshairMode.Magnet,
@@ -5154,7 +5208,7 @@
         },
         localization: {
           locale: currentLang === 'zh' ? 'zh-CN' : 'en-US',
-          timeFormatter: getChartTimeFormatter()
+          timeFormatter: getOptionsChartTimeFormatter()
         }
       });
       applyChartLocalization();
@@ -5496,11 +5550,14 @@
           timeFormatter: getChartTimeFormatter()
         }
       });
-      optionsMarkSeries = optionsChart.addLineSeries({
-        color: '#7cc4ff',
-        lineWidth: 2,
-        priceLineVisible: true,
-        lastValueVisible: true,
+      optionsMarkSeries = optionsChart.addCandlestickSeries({
+        upColor: '#27d07d',
+        downColor: '#ff6b6b',
+        borderVisible: false,
+        wickUpColor: '#35f49b',
+        wickDownColor: '#ff7b7b',
+        priceLineColor: 'rgba(124, 196, 255, 0.6)',
+        priceLineWidth: 1,
       });
       optionsChartLegendEl = document.getElementById('optionsChartLegend');
       optionsChart.subscribeCrosshairMove(param => {
@@ -5536,9 +5593,10 @@
       if (!data.length) return null;
       if (time) {
         const match = data.find(point => point.time === time);
-        if (match) return match.value;
+        if (match) return match.value ?? match.close ?? null;
       }
-      return data[data.length - 1].value;
+      const last = data[data.length - 1];
+      return last?.value ?? last?.close ?? null;
     }
 
     function formatIv(value) {
@@ -5672,7 +5730,33 @@
       const res = await fetch(`/api/options/timeseries?${qs.toString()}`, { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
-      if (!data || data.ok === false || !Array.isArray(data.points)) return;
+      if (!data || data.ok === false) return;
+      if (metric === 'mark' && Array.isArray(data.bars)) {
+        const candles = data.bars.map(row => {
+          const ts = Number(row[0]);
+          const open = Number(row[1]);
+          const high = Number(row[2]);
+          const low = Number(row[3]);
+          const close = Number(row[4]);
+          const time = Math.floor(ts / 1000);
+          if (!Number.isFinite(time) || !Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+            return null;
+          }
+          return { time, open, high, low, close };
+        }).filter(Boolean);
+        optionsCandlesData = candles;
+        optionsSeriesData.mark = candles.map(candle => ({ time: candle.time, value: candle.close }));
+        const series = getOptionsSeries(metric);
+        if (series) series.setData(candles);
+        if (optionsChart && !optionsChartHasLoaded && candles.length) {
+          optionsChart.timeScale().fitContent();
+          optionsChartHasLoaded = true;
+          optionsChartLastSymbol = symbol;
+          optionsChartLastInterval = interval;
+        }
+        return;
+      }
+      if (!Array.isArray(data.points)) return;
       const bucketSeconds = getIntervalSeconds(interval);
       const bucketMs = bucketSeconds ? bucketSeconds * 1000 : 0;
       let pointPairs = data.points;
@@ -6999,6 +7083,7 @@
     });
     on('options_chart_reload', 'click', refreshOptionsChart);
     on('options_chart_interval', 'change', refreshOptionsChart);
+    on('options_chart_interval', 'change', applyOptionsChartLocalization);
     on('options_chart_refresh', 'change', startOptionsChartPolling);
     on('options_chart_auto', 'change', startOptionsChartPolling);
     on('options_chart_symbol', 'change', () => {

@@ -69,13 +69,26 @@ _pending_markouts: dict[str, dict] = {}
 _markout_thread: Optional[threading.Thread] = None
 
 # Options snapshot buffer
-OPTIONS_SNAPSHOT_RETENTION_MIN = 180
-OPTIONS_SNAPSHOT_MAX_POINTS = 1000
+OPTIONS_SNAPSHOT_RETENTION_MIN = 1440
+OPTIONS_SNAPSHOT_MAX_POINTS = 3000
 OPTIONS_SNAPSHOT_MIN_INTERVAL_MS = 800
+OPTIONS_SNAPSHOT_RECORD_INTERVAL_MS = 30000
+OPTIONS_TRADE_BAR_INTERVAL_MS = 30000
+OPTIONS_TRADE_RETENTION_MIN = 1440
+OPTIONS_TRADE_MAX_BARS = 4000
+OPTIONS_TRADE_SEEN_LIMIT = 4000
+OPTIONS_TRADE_FETCH_INTERVAL_MS = 2000
+OPTIONS_TRADE_STALE_MS = 10 * 60 * 1000
 _options_snapshot_lock = threading.Lock()
 _options_snapshots: dict[str, deque] = {}
 _options_snapshot_cache: dict[str, dict] = {}
 _options_snapshot_last_fetch: dict[str, int] = {}
+_options_snapshot_last_record: dict[str, int] = {}
+_options_trade_lock = threading.Lock()
+_options_trade_bars: dict[str, deque] = {}
+_options_trade_seen: dict[str, dict] = {}
+_options_trade_last_fetch: dict[str, int] = {}
+_options_trade_last_update: dict[str, int] = {}
 
 
 def _env(key: str, default: str = "") -> str:
@@ -541,16 +554,21 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         if not has_value:
             return
         now_ms = int(snapshot.get("asof_ms") or 0)
+        with _options_snapshot_lock:
+            last_record = _options_snapshot_last_record.get(symbol, 0)
+        if now_ms - last_record < OPTIONS_SNAPSHOT_RECORD_INTERVAL_MS:
+            return
         cutoff = now_ms - OPTIONS_SNAPSHOT_RETENTION_MIN * 60 * 1000
         with _options_snapshot_lock:
             buf = _options_snapshots.setdefault(symbol, deque())
             buf.append(snapshot)
+            _options_snapshot_last_record[symbol] = now_ms
             while buf and (buf[0].get("asof_ms") or 0) < cutoff:
                 buf.popleft()
             while len(buf) > OPTIONS_SNAPSHOT_MAX_POINTS:
                 buf.popleft()
 
-    def _fetch_options_snapshot(self, symbol: str) -> Optional[dict]:
+    def _fetch_options_snapshot_bybit(self, symbol: str) -> Optional[dict]:
         params = {
             "category": "option",
             "symbol": symbol,
@@ -588,7 +606,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             cached = _options_snapshot_cache.get(symbol)
         if cached and (now_ms - last_ts) < OPTIONS_SNAPSHOT_MIN_INTERVAL_MS:
             return cached
-        snapshot = self._fetch_options_snapshot(symbol)
+        snapshot = self._fetch_options_snapshot_bybit(symbol)
         if not snapshot:
             snapshot = self._build_stale_options_snapshot(symbol)
         with _options_snapshot_lock:
@@ -609,6 +627,110 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 continue
             points.append([int(ts), float(value)])
         return points
+
+    def _normalize_option_trade(self, row: dict) -> Optional[dict]:
+        try:
+            ts_ms = int(row.get("time") or row.get("ts") or 0)
+            price = float(row.get("price") or 0)
+            size = float(row.get("size") or row.get("qty") or 0)
+        except (TypeError, ValueError):
+            return None
+        if ts_ms <= 0 or price <= 0:
+            return None
+        return {
+            "ts_ms": ts_ms,
+            "price": price,
+            "size": size,
+            "id": row.get("execId") or "",
+        }
+
+    def _fetch_options_trades_bybit(self, symbol: str) -> list[dict]:
+        params = {
+            "category": "option",
+            "symbol": symbol,
+            "limit": "200",
+        }
+        data = self._public_get("/v5/market/recent-trade", params)
+        if not data:
+            return []
+        rows = (data.get("result") or {}).get("list") or []
+        trades = []
+        for row in rows:
+            norm = self._normalize_option_trade(row)
+            if norm:
+                trades.append(norm)
+        trades.sort(key=lambda t: t.get("ts_ms") or 0)
+        return trades
+
+    def _record_options_trade_bars(self, symbol: str, trades: list[dict]) -> None:
+        if not trades:
+            return
+        now_ms = int(time.time() * 1000)
+        updated = False
+        with _options_trade_lock:
+            seen = _options_trade_seen.setdefault(symbol, {"queue": deque(), "set": set()})
+            bars = _options_trade_bars.setdefault(symbol, deque())
+            for trade in trades:
+                trade_id = trade.get("id") or ""
+                key = trade_id or f"{trade.get('ts_ms')}|{trade.get('price')}|{trade.get('size')}"
+                if key in seen["set"]:
+                    continue
+                seen["set"].add(key)
+                seen["queue"].append(key)
+                if len(seen["queue"]) > OPTIONS_TRADE_SEEN_LIMIT:
+                    old = seen["queue"].popleft()
+                    seen["set"].discard(old)
+                bucket = int(trade["ts_ms"] // OPTIONS_TRADE_BAR_INTERVAL_MS) * OPTIONS_TRADE_BAR_INTERVAL_MS
+                price = float(trade["price"])
+                size = float(trade.get("size") or 0)
+                if bars and bucket < bars[-1]["t"]:
+                    continue
+                if bars and bucket == bars[-1]["t"]:
+                    bar = bars[-1]
+                    bar["h"] = max(bar["h"], price)
+                    bar["l"] = min(bar["l"], price)
+                    bar["c"] = price
+                    bar["v"] += size
+                else:
+                    bars.append({
+                        "t": bucket,
+                        "o": price,
+                        "h": price,
+                        "l": price,
+                        "c": price,
+                        "v": size,
+                    })
+                updated = True
+            if updated:
+                _options_trade_last_update[symbol] = now_ms
+            cutoff = now_ms - OPTIONS_TRADE_RETENTION_MIN * 60 * 1000
+            while bars and bars[0]["t"] < cutoff:
+                bars.popleft()
+            while len(bars) > OPTIONS_TRADE_MAX_BARS:
+                bars.popleft()
+
+    def _update_options_trade_bars(self, symbol: str) -> None:
+        now_ms = int(time.time() * 1000)
+        with _options_trade_lock:
+            last_fetch = _options_trade_last_fetch.get(symbol, 0)
+            if now_ms - last_fetch < OPTIONS_TRADE_FETCH_INTERVAL_MS:
+                return
+            _options_trade_last_fetch[symbol] = now_ms
+        trades = self._fetch_options_trades_bybit(symbol)
+        if trades:
+            self._record_options_trade_bars(symbol, trades)
+
+    def _get_options_trade_bars(self, symbol: str) -> list[dict]:
+        with _options_trade_lock:
+            return list(_options_trade_bars.get(symbol, []))
+
+    def _get_options_trade_stale(self, symbol: str) -> bool:
+        now_ms = int(time.time() * 1000)
+        with _options_trade_lock:
+            last_update = _options_trade_last_update.get(symbol, 0)
+        if not last_update:
+            return True
+        return (now_ms - last_update) > OPTIONS_TRADE_STALE_MS
 
     def _get_trading_client(self) -> Optional[BybitAPIClient]:
         if not self.trading_key or not self.trading_secret:
@@ -1709,16 +1831,30 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 return self._write_json({"ok": False, "error": "symbol is required"}, status=400)
             if metric not in ("mark", "iv", "delta", "vega"):
                 return self._write_json({"ok": False, "error": "invalid metric"}, status=400)
-            snapshot = self._get_options_snapshot(symbol)
-            points = self._get_options_timeseries(symbol, metric)
-            payload = {
-                "ok": True,
-                "source": "Bybit API",
-                "symbol": symbol,
-                "metric": metric,
-                "points": points,
-                "stale": bool(snapshot.get("stale")),
-            }
+            if metric == "mark":
+                self._update_options_trade_bars(symbol)
+                bars = self._get_options_trade_bars(symbol)
+                points = [[bar["t"], bar["c"]] for bar in bars if bar.get("c") is not None]
+                payload = {
+                    "ok": True,
+                    "source": "Bybit API",
+                    "symbol": symbol,
+                    "metric": metric,
+                    "bars": [[bar["t"], bar["o"], bar["h"], bar["l"], bar["c"], bar.get("v", 0)] for bar in bars],
+                    "points": points,
+                    "stale": self._get_options_trade_stale(symbol),
+                }
+            else:
+                snapshot = self._get_options_snapshot(symbol)
+                points = self._get_options_timeseries(symbol, metric)
+                payload = {
+                    "ok": True,
+                    "source": snapshot.get("source") or "Bybit API",
+                    "symbol": symbol,
+                    "metric": metric,
+                    "points": points,
+                    "stale": bool(snapshot.get("stale")),
+                }
             return self._write_json(payload, status=200)
 
         if path == "/api/options/orderbook":
@@ -1761,6 +1897,7 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/options/instruments":
             base = query_params.get("base", [""])[0]
+            instruments = []
             params = {
                 "category": "option",
             }
@@ -1770,7 +1907,6 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             if not data:
                 return self._write_json({"ok": False, "error": "options instruments fetch failed"}, status=502)
             items = (data.get("result") or {}).get("list") or []
-            instruments = []
             for item in items:
                 symbol = item.get("symbol") or ""
                 if not symbol:

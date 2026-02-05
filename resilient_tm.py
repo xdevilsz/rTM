@@ -887,6 +887,15 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
             self.options_trading_service = TradingService(self.options_trading_client, BROKER_ID, "option")
         return self.options_trading_service
 
+    def _get_options_client(self) -> Optional[BybitAPIClient]:
+        key = self.trading_key or self.bybit_key
+        secret = self.trading_secret or self.bybit_secret
+        if not key or not secret:
+            return None
+        if not self.options_trading_client or self.options_trading_client.api_key != key:
+            self.options_trading_client = BybitAPIClient(key, secret, self.bybit_url, "option")
+        return self.options_trading_client
+
     def _get_position_for_symbol(self, symbol: str) -> Optional[dict]:
         if not symbol:
             return None
@@ -2033,6 +2042,33 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 "stale": False,
             }, status=200)
 
+        if path == "/api/options/orders":
+            symbol = (query_params.get("symbol", [""])[0] or "").strip()
+            client = self._get_options_client()
+            if not client:
+                return self._write_json({"ok": False, "error": "API client not configured"}, status=400)
+
+            def _merge(items: list[dict], dest: list[dict]):
+                for item in items or []:
+                    order_id = item.get("orderId") or item.get("orderID")
+                    if not order_id:
+                        continue
+                    if not any((o.get("orderId") or o.get("orderID")) == order_id for o in dest):
+                        dest.append(item)
+
+            orders: list[dict] = []
+            if symbol:
+                norm = self._normalize_option_symbol(symbol)
+                _merge(client.fetch_active_orders(symbol=norm), orders)
+            else:
+                _merge(client.fetch_active_orders(), orders)
+                if not orders:
+                    _merge(client.fetch_active_orders(settle_coin="USDT"), orders)
+                    _merge(client.fetch_active_orders(settle_coin="USDC"), orders)
+            if not orders and client.last_error:
+                return self._write_json({"ok": False, "error": client.last_error}, status=502)
+            return self._write_json({"ok": True, "orders": orders}, status=200)
+
         if path == "/api/account/summary":
             if not self.bybit_client:
                 if not self.bybit_key or not self.bybit_secret:
@@ -2538,10 +2574,12 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                 return self._write_json({"ok": False, "error": "Trading is not enabled"}, status=400)
             if not order_id or not symbol:
                 return self._write_json({"ok": False, "error": "order_id and symbol are required"}, status=400)
-            client = self._get_trading_client()
+            option_symbol = self._is_option_symbol(symbol)
+            client = self._get_options_client() if option_symbol else self._get_trading_client()
             if not client:
                 return self._write_json({"ok": False, "error": "Trading client not configured"}, status=400)
-            ok = client.cancel_order(order_id=order_id, symbol=symbol)
+            cancel_symbol = self._normalize_option_symbol(symbol) if option_symbol else symbol
+            ok = client.cancel_order(order_id=order_id, symbol=cancel_symbol)
             if not ok and client.last_error:
                 return self._write_json({"ok": False, "error": client.last_error}, status=502)
             return self._write_json({"ok": True}, status=200)
@@ -3724,6 +3762,51 @@ if __name__ == "__main__":
                 positions = self._fetch_positions()
                 return self._write_json(positions, status=200)
             return self._write_json({"ok": False, "error": "positions only available in API modes"}, status=400)
+
+        if path == "/api/options/positions":
+            client = self._get_options_client()
+            if not client:
+                return self._write_json({"positions": [], "error": "API client not configured"}, status=200)
+            collected: list[dict] = []
+
+            def _merge(items: list[dict]):
+                for item in items or []:
+                    symbol = item.get("symbol") or item.get("Symbol")
+                    if not symbol:
+                        continue
+                    if not any((p.get("symbol") or p.get("Symbol")) == symbol for p in collected):
+                        collected.append(item)
+
+            _merge(client.fetch_positions_option(settle_coin="USDC"))
+            _merge(client.fetch_positions_option(settle_coin="USDT"))
+            return self._write_json({"positions": collected}, status=200)
+
+        if path == "/api/options/orders":
+            symbol = (query_params.get("symbol", [""])[0] or "").strip()
+            client = self._get_options_client()
+            if not client:
+                return self._write_json({"ok": False, "error": "API client not configured"}, status=400)
+
+            def _merge_orders(items: list[dict], dest: list[dict]):
+                for item in items or []:
+                    order_id = item.get("orderId") or item.get("orderID")
+                    if not order_id:
+                        continue
+                    if not any((o.get("orderId") or o.get("orderID")) == order_id for o in dest):
+                        dest.append(item)
+
+            orders: list[dict] = []
+            if symbol:
+                norm = self._normalize_option_symbol(symbol)
+                _merge_orders(client.fetch_active_orders(symbol=norm), orders)
+            else:
+                _merge_orders(client.fetch_active_orders(), orders)
+                if not orders:
+                    _merge_orders(client.fetch_active_orders(settle_coin="USDT"), orders)
+                    _merge_orders(client.fetch_active_orders(settle_coin="USDC"), orders)
+            if not orders and client.last_error:
+                return self._write_json({"ok": False, "error": client.last_error}, status=502)
+            return self._write_json({"ok": True, "orders": orders}, status=200)
 
         if path == "/api/skew":
             skew_path = self.data_root / "runtime" / "skew_metrics.json"

@@ -5597,6 +5597,10 @@
       };
       if (candleSeries) candleSeries.applyOptions({ priceFormat });
       if (tickSeries) tickSeries.applyOptions({ priceFormat });
+      const priceInput = document.getElementById('chart_order_price');
+      if (priceInput && precision.tickSize) priceInput.step = String(precision.tickSize);
+      const qtyInput = document.getElementById('chart_order_qty');
+      if (qtyInput && precision.qtyStep) qtyInput.step = String(precision.qtyStep);
     }
 
     function buildVolumeBar(candle) {

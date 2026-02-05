@@ -68,6 +68,15 @@ _markout_heap: list[tuple[float, str, str]] = []
 _pending_markouts: dict[str, dict] = {}
 _markout_thread: Optional[threading.Thread] = None
 
+# Options snapshot buffer
+OPTIONS_SNAPSHOT_RETENTION_MIN = 180
+OPTIONS_SNAPSHOT_MAX_POINTS = 1000
+OPTIONS_SNAPSHOT_MIN_INTERVAL_MS = 800
+_options_snapshot_lock = threading.Lock()
+_options_snapshots: dict[str, deque] = {}
+_options_snapshot_cache: dict[str, dict] = {}
+_options_snapshot_last_fetch: dict[str, int] = {}
+
 
 def _env(key: str, default: str = "") -> str:
     return os.getenv(key, default).strip()
@@ -497,6 +506,109 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
         if str(data.get("retCode")) != "0":
             return None
         return data
+
+    def _normalize_iv(self, iv_value: Optional[float]) -> Optional[float]:
+        if iv_value is None:
+            return None
+        iv = float(iv_value)
+        if iv > 5:
+            iv = iv / 100.0
+        if iv <= 0.0001 or iv >= 5:
+            return None
+        return iv
+
+    def _build_stale_options_snapshot(self, symbol: str) -> dict:
+        return {
+            "ok": True,
+            "source": "Bybit API",
+            "asof_ms": int(time.time() * 1000),
+            "symbol": symbol,
+            "last": None,
+            "mark": None,
+            "iv": None,
+            "delta": None,
+            "gamma": None,
+            "vega": None,
+            "stale": True,
+        }
+
+    def _record_options_snapshot(self, symbol: str, snapshot: dict) -> None:
+        if snapshot.get("stale"):
+            return
+        if not snapshot.get("asof_ms"):
+            return
+        has_value = any(snapshot.get(key) is not None for key in ("last", "mark", "iv", "delta", "gamma", "vega"))
+        if not has_value:
+            return
+        now_ms = int(snapshot.get("asof_ms") or 0)
+        cutoff = now_ms - OPTIONS_SNAPSHOT_RETENTION_MIN * 60 * 1000
+        with _options_snapshot_lock:
+            buf = _options_snapshots.setdefault(symbol, deque())
+            buf.append(snapshot)
+            while buf and (buf[0].get("asof_ms") or 0) < cutoff:
+                buf.popleft()
+            while len(buf) > OPTIONS_SNAPSHOT_MAX_POINTS:
+                buf.popleft()
+
+    def _fetch_options_snapshot(self, symbol: str) -> Optional[dict]:
+        params = {
+            "category": "option",
+            "symbol": symbol,
+        }
+        data = self._public_get("/v5/market/tickers", params)
+        if not data:
+            return None
+        rows = (data.get("result") or {}).get("list") or []
+        info = rows[0] if rows else {}
+        last = _to_float(info.get("lastPrice") or info.get("last_price"))
+        mark = _to_float(info.get("markPrice") or info.get("mark_price"))
+        iv = _to_float(info.get("iv"))
+        delta = _to_float(info.get("delta"))
+        gamma = _to_float(info.get("gamma"))
+        vega = _to_float(info.get("vega"))
+        iv_norm = self._normalize_iv(iv)
+        return {
+            "ok": True,
+            "source": "Bybit API",
+            "asof_ms": int(time.time() * 1000),
+            "symbol": symbol,
+            "last": last,
+            "mark": mark,
+            "iv": iv_norm,
+            "delta": delta,
+            "gamma": gamma,
+            "vega": vega,
+            "stale": False,
+        }
+
+    def _get_options_snapshot(self, symbol: str) -> dict:
+        now_ms = int(time.time() * 1000)
+        with _options_snapshot_lock:
+            last_ts = _options_snapshot_last_fetch.get(symbol, 0)
+            cached = _options_snapshot_cache.get(symbol)
+        if cached and (now_ms - last_ts) < OPTIONS_SNAPSHOT_MIN_INTERVAL_MS:
+            return cached
+        snapshot = self._fetch_options_snapshot(symbol)
+        if not snapshot:
+            snapshot = self._build_stale_options_snapshot(symbol)
+        with _options_snapshot_lock:
+            _options_snapshot_last_fetch[symbol] = now_ms
+            _options_snapshot_cache[symbol] = snapshot
+        if not snapshot.get("stale"):
+            self._record_options_snapshot(symbol, snapshot)
+        return snapshot
+
+    def _get_options_timeseries(self, symbol: str, metric: str) -> list[list[float]]:
+        with _options_snapshot_lock:
+            buf = list(_options_snapshots.get(symbol, []))
+        points = []
+        for snap in buf:
+            value = snap.get(metric)
+            ts = snap.get("asof_ms")
+            if value is None or ts is None:
+                continue
+            points.append([int(ts), float(value)])
+        return points
 
     def _get_trading_client(self) -> Optional[BybitAPIClient]:
         if not self.trading_key or not self.trading_secret:
@@ -1583,37 +1695,107 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                     continue
             return self._write_json({"ok": True, "klines": klines}, status=200)
 
-        if path == "/api/options/klines":
+        if path == "/api/options/snapshot":
             symbol = query_params.get("symbol", [""])[0]
-            interval = query_params.get("interval", ["1"])[0]
-            limit = int(query_params.get("limit", ["300"])[0])
+            if not symbol:
+                return self._write_json({"ok": False, "error": "symbol is required"}, status=400)
+            snapshot = self._get_options_snapshot(symbol)
+            return self._write_json(snapshot, status=200)
+
+        if path == "/api/options/timeseries":
+            symbol = query_params.get("symbol", [""])[0]
+            metric = (query_params.get("metric") or ["mark"])[0]
+            if not symbol:
+                return self._write_json({"ok": False, "error": "symbol is required"}, status=400)
+            if metric not in ("mark", "iv", "delta", "vega"):
+                return self._write_json({"ok": False, "error": "invalid metric"}, status=400)
+            snapshot = self._get_options_snapshot(symbol)
+            points = self._get_options_timeseries(symbol, metric)
+            payload = {
+                "ok": True,
+                "source": "Bybit API",
+                "symbol": symbol,
+                "metric": metric,
+                "points": points,
+                "stale": bool(snapshot.get("stale")),
+            }
+            return self._write_json(payload, status=200)
+
+        if path == "/api/options/orderbook":
+            symbol = query_params.get("symbol", [""])[0]
             if not symbol:
                 return self._write_json({"ok": False, "error": "symbol is required"}, status=400)
             params = {
                 "category": "option",
                 "symbol": symbol,
-                "interval": interval,
-                "limit": str(min(max(limit, 1), 1000)),
+                "limit": "25",
             }
-            data = self._public_get("/v5/market/kline", params)
+            data = self._public_get("/v5/market/orderbook", params)
             if not data:
-                return self._write_json({"ok": False, "error": "options kline fetch failed"}, status=502)
-            rows = (data.get("result") or {}).get("list") or []
-            klines = []
-            for row in reversed(rows):
+                return self._write_json({
+                    "ok": True,
+                    "source": "Bybit API",
+                    "asof_ms": int(time.time() * 1000),
+                    "bids": [],
+                    "asks": [],
+                    "stale": True,
+                }, status=200)
+            result = data.get("result") or {}
+            bids = result.get("b") or result.get("bids") or []
+            asks = result.get("a") or result.get("asks") or []
+            def _to_level(row):
                 try:
-                    ts_ms = int(row[0])
-                    klines.append({
-                        "time": int(ts_ms / 1000),
-                        "open": float(row[1]),
-                        "high": float(row[2]),
-                        "low": float(row[3]),
-                        "close": float(row[4]),
-                        "volume": float(row[5]),
-                    })
+                    return [float(row[0]), float(row[1])]
                 except Exception:
+                    return None
+            norm_bids = [lvl for lvl in (_to_level(r) for r in bids) if lvl]
+            norm_asks = [lvl for lvl in (_to_level(r) for r in asks) if lvl]
+            return self._write_json({
+                "ok": True,
+                "source": "Bybit API",
+                "asof_ms": int(time.time() * 1000),
+                "bids": norm_bids,
+                "asks": norm_asks,
+                "stale": False,
+            }, status=200)
+
+        if path == "/api/options/instruments":
+            base = query_params.get("base", [""])[0]
+            params = {
+                "category": "option",
+            }
+            if base:
+                params["baseCoin"] = base
+            data = self._public_get("/v5/market/instruments-info", params)
+            if not data:
+                return self._write_json({"ok": False, "error": "options instruments fetch failed"}, status=502)
+            items = (data.get("result") or {}).get("list") or []
+            instruments = []
+            for item in items:
+                symbol = item.get("symbol") or ""
+                if not symbol:
                     continue
-            return self._write_json({"ok": True, "klines": klines}, status=200)
+                expiry = item.get("deliveryTime") or item.get("deliveryTimeMs") or ""
+                expiry_label = ""
+                try:
+                    expiry_val = int(expiry)
+                    if expiry_val > 0:
+                        if expiry_val > 1e12:
+                            expiry_val = int(expiry_val / 1000)
+                        expiry_label = time.strftime("%Y-%m-%d", time.gmtime(expiry_val))
+                except Exception:
+                    expiry_label = ""
+                if not expiry_label:
+                    parts = symbol.split("-")
+                    if len(parts) >= 4:
+                        expiry_label = parts[1]
+                instruments.append({
+                    "symbol": symbol,
+                    "expiry": expiry_label,
+                    "optionType": item.get("optionsType") or item.get("optionType") or "",
+                    "base": item.get("baseCoin") or "",
+                })
+            return self._write_json({"ok": True, "instruments": instruments}, status=200)
 
         if path == "/api/trades/stream":
             symbol = query_params.get("symbol", [""])[0]

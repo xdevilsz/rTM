@@ -949,6 +949,149 @@
     .options-chart-controls {
       align-items: flex-end;
     }
+    .options-chart-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 6px 0 2px;
+    }
+    .options-chart-source {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(12, 18, 28, 0.7);
+      color: var(--text);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .options-chart-overlays {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 6px 0 10px;
+    }
+    .options-chart-layout {
+      display: flex;
+      gap: 16px;
+      align-items: stretch;
+    }
+    .options-chart-main {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .options-orderbook {
+      width: 320px;
+      min-width: 280px;
+      background: rgba(9, 14, 22, 0.7);
+      border-radius: var(--r-lg);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .orderbook-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .orderbook-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .orderbook-table {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .orderbook-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      align-items: center;
+      position: relative;
+      padding: 4px 6px;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .orderbook-row span {
+      position: relative;
+      z-index: 1;
+    }
+    .orderbook-row.header {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(12, 18, 28, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .orderbook-row::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      width: var(--ob-fill, 0%);
+      opacity: 0.5;
+      pointer-events: none;
+      transition: width 0.2s ease;
+    }
+    .orderbook-row.ask::before {
+      background: rgba(255, 107, 107, 0.18);
+      right: 0;
+      left: auto;
+    }
+    .orderbook-row.bid::before {
+      background: rgba(39, 208, 125, 0.18);
+      left: 0;
+      right: auto;
+    }
+    .orderbook-row.ask .ob-price { color: var(--danger); }
+    .orderbook-row.bid .ob-price { color: var(--success); }
+    .orderbook-mid {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: rgba(12, 18, 28, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .orderbook-section {
+      display: grid;
+      gap: 4px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .badge.stale {
+      display: none;
+      border: 1px solid rgba(255, 107, 107, 0.4);
+      color: #ffb3b3;
+      background: rgba(255, 107, 107, 0.15);
+    }
+    .badge.stale.active {
+      display: inline-flex;
+    }
     .chart-left {
       flex: 1 1 auto;
       display: flex;
@@ -1162,6 +1305,9 @@
       .chart-surface { height: 360px; }
       .chart-layout { flex-direction: column; }
       .chart-bottom { flex-direction: column; }
+      .options-chart-layout { flex-direction: column; }
+      .options-orderbook { width: 100%; }
+      .options-chart-surface { height: 320px; }
     }
     .chart-trade {
       position: absolute;
@@ -1795,7 +1941,13 @@
         </div>
         <div class="row options-chart-controls">
           <label class="field-group"><span data-i18n="label_options_symbol">Options Symbol</span>
-            <input id="options_chart_symbol" type="text" placeholder="e.g. BTC-30MAR24-70000-C" class="field sm">
+            <select id="options_chart_symbol" class="field sm"></select>
+          </label>
+          <label class="field-group"><span data-i18n="label_expiry">Expiry</span>
+            <select id="options_chart_expiry" class="field sm"></select>
+          </label>
+          <label class="field-group"><span data-i18n="label_option_type">Call/Put</span>
+            <select id="options_chart_type" class="field sm"></select>
           </label>
           <label class="field-group"><span data-i18n="label_interval">Interval</span>
             <select id="options_chart_interval" class="field sm">
@@ -1826,10 +1978,52 @@
           <button id="options_chart_reload" class="btn ghost sm" data-i18n="button_reload">Reload</button>
         </div>
       </div>
-      <div class="chart-note muted" id="options_chart_note" data-i18n="options_chart_hint">Enter an options symbol to load candles.</div>
-      <div class="chart-surface options-chart-surface">
-        <div class="chart-legend" id="optionsChartLegend"></div>
-        <div class="chart-container" id="options_chart_container"></div>
+      <div class="chart-note muted" id="options_chart_note" data-i18n="options_chart_hint">Select an options contract to load snapshot-derived series.</div>
+      <div class="options-chart-meta">
+        <span class="options-chart-source">Data: Bybit API · Snapshot-derived</span>
+        <span class="options-chart-asof">As of <span id="options_chart_asof">--</span></span>
+        <span class="badge stale" id="options_chart_stale">STALE</span>
+      </div>
+      <div class="options-chart-overlays">
+        <label class="overlay-pill">
+          <input type="checkbox" id="options_show_iv">
+          <span>IV</span>
+        </label>
+        <label class="overlay-pill">
+          <input type="checkbox" id="options_show_delta">
+          <span>Delta</span>
+        </label>
+        <label class="overlay-pill">
+          <input type="checkbox" id="options_show_vega">
+          <span>Vega</span>
+        </label>
+      </div>
+      <div class="options-chart-layout">
+        <div class="options-chart-main">
+          <div class="chart-surface options-chart-surface">
+            <div class="chart-legend" id="optionsChartLegend"></div>
+            <div class="chart-container" id="options_chart_container"></div>
+          </div>
+        </div>
+        <aside class="options-orderbook">
+          <div class="orderbook-head">
+            <div class="panel-title" data-i18n="heading_options_orderbook">Options Orderbook</div>
+            <div class="orderbook-meta">
+              <span class="orderbook-asof">As of <span id="options_orderbook_asof">--</span></span>
+              <span class="badge stale" id="options_orderbook_stale">STALE</span>
+            </div>
+          </div>
+          <div class="orderbook-table">
+            <div class="orderbook-row header">
+              <span data-i18n="label_price">Price</span>
+              <span data-i18n="label_qty">Size</span>
+              <span data-i18n="label_total">Total</span>
+            </div>
+            <div id="options_orderbook_asks" class="orderbook-section"></div>
+            <div class="orderbook-mid" id="options_orderbook_mid">--</div>
+            <div id="options_orderbook_bids" class="orderbook-section"></div>
+          </div>
+        </aside>
       </div>
     </section>
   </div>
@@ -2089,15 +2283,21 @@
     let indicatorDropdownBound = false;
     const symbolPrecision = {};
     let optionsChart = null;
-    let optionsCandleSeries = null;
-    let optionsVolumeSeries = null;
+    let optionsMarkSeries = null;
+    let optionsOverlaySeries = new Map();
+    let optionsMetricsEnabled = { iv: false, delta: false, vega: false };
     let optionsChartTimer = null;
+    let optionsOrderbookTimer = null;
     let optionsChartLegendEl = null;
     let optionsChartInitAttempts = 0;
     let optionsChartHasLoaded = false;
-    let optionsChartKlines = [];
     let optionsChartLastSymbol = '';
     let optionsChartLastInterval = '';
+    let optionsSeriesData = { mark: [], iv: [], delta: [], vega: [] };
+    let optionsSnapshot = null;
+    let optionsChartRefreshing = false;
+    let optionsInstruments = [];
+    let optionsInstrumentsLoaded = false;
     let overlayLines = { orders: [], be: [], liq: [] };
     let activeTool = 'cursor';
     let currentSide = 'Buy';
@@ -2143,6 +2343,10 @@
         tab_about: 'About',
         heading_trade_consistency: 'Trade Consistency',
         heading_options_chart: 'Options Chart',
+        heading_options_orderbook: 'Options Orderbook',
+        label_expiry: 'Expiry',
+        label_option_type: 'Call/Put',
+        label_total: 'Total',
         label_consistency_score: 'Consistency Score',
         label_avg_interval: 'Avg Interval (s)',
         label_interval_std: 'Interval Std (s)',
@@ -2162,7 +2366,9 @@
         button_apply: 'Apply',
         button_export_history: 'Export History',
         button_clear_log: 'Clear Local Log',
-        options_chart_hint: 'Enter an options symbol to load candles.',
+        options_chart_hint: 'Select an options contract to load snapshot-derived series.',
+        options_chart_loading: 'Loading options contracts...',
+        options_chart_load_failed: 'Failed to load options contracts.',
         th_time: 'Time',
         th_symbol: 'Symbol',
         th_side: 'Side',
@@ -2455,6 +2661,10 @@
         tab_about: '关于',
         heading_trade_consistency: '交易一致性',
         heading_options_chart: '期权图表',
+        heading_options_orderbook: '期权盘口',
+        label_expiry: '到期日',
+        label_option_type: '看涨/看跌',
+        label_total: '累计',
         label_consistency_score: '一致性评分',
         label_avg_interval: '平均间隔（秒）',
         label_interval_std: '间隔标准差（秒）',
@@ -2474,7 +2684,9 @@
         button_apply: '应用',
         button_export_history: '导出历史',
         button_clear_log: '清除本地记录',
-        options_chart_hint: '输入期权交易对以加载 K 线。',
+        options_chart_hint: '选择期权合约以加载快照曲线。',
+        options_chart_loading: '正在加载期权合约...',
+        options_chart_load_failed: '期权合约加载失败。',
         th_time: '时间',
         th_symbol: '交易对',
         th_side: '方向',
@@ -3177,6 +3389,7 @@
               clearInterval(optionsChartTimer);
               optionsChartTimer = null;
             }
+            stopOptionsOrderbook();
           } else {
             state.chartVisible = false;
             stopTradeStream();
@@ -3189,6 +3402,7 @@
                 clearInterval(optionsChartTimer);
                 optionsChartTimer = null;
               }
+              stopOptionsOrderbook();
             }
           }
         });
@@ -5152,8 +5366,90 @@
     }
 
     function getOptionsChartSymbol() {
-      const input = document.getElementById('options_chart_symbol');
-      return input ? (input.value || '').trim().toUpperCase() : '';
+      const select = document.getElementById('options_chart_symbol');
+      return select ? (select.value || '').trim().toUpperCase() : '';
+    }
+
+    function normalizeOptionType(value) {
+      const raw = String(value || '').trim().toUpperCase();
+      if (!raw) return '';
+      if (raw.startsWith('C')) return 'Call';
+      if (raw.startsWith('P')) return 'Put';
+      return raw.charAt(0) + raw.slice(1).toLowerCase();
+    }
+
+    function normalizeExpiryLabel(value) {
+      if (!value) return '';
+      const raw = String(value);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      return raw.toUpperCase();
+    }
+
+    function compareExpiry(a, b) {
+      const da = Date.parse(a);
+      const db = Date.parse(b);
+      if (!Number.isNaN(da) && !Number.isNaN(db)) return da - db;
+      return String(a).localeCompare(String(b));
+    }
+
+    function updateOptionsSymbolOptions() {
+      const symbolSelect = document.getElementById('options_chart_symbol');
+      const expirySelect = document.getElementById('options_chart_expiry');
+      const typeSelect = document.getElementById('options_chart_type');
+      if (!symbolSelect || !expirySelect || !typeSelect) return;
+      const expiry = expirySelect.value || 'all';
+      const type = typeSelect.value || 'all';
+      const filtered = optionsInstruments.filter(item => {
+        if (expiry !== 'all' && item.expiry !== expiry) return false;
+        if (type !== 'all' && item.optionType !== type) return false;
+        return true;
+      });
+      symbolSelect.innerHTML = filtered.map(item => `<option value="${item.symbol}">${item.symbol}</option>`).join('');
+      if (!filtered.length) {
+        symbolSelect.innerHTML = `<option value="">--</option>`;
+        return;
+      }
+      if (!filtered.some(item => item.symbol === symbolSelect.value)) {
+        symbolSelect.value = filtered[0].symbol;
+      }
+    }
+
+    function rebuildOptionsFilters() {
+      const expirySelect = document.getElementById('options_chart_expiry');
+      const typeSelect = document.getElementById('options_chart_type');
+      if (!expirySelect || !typeSelect) return;
+      const expiries = Array.from(new Set(optionsInstruments.map(item => item.expiry).filter(Boolean))).sort(compareExpiry);
+      const types = Array.from(new Set(optionsInstruments.map(item => item.optionType).filter(Boolean))).sort();
+      expirySelect.innerHTML = ['<option value="all">ALL</option>']
+        .concat(expiries.map(exp => `<option value="${exp}">${exp}</option>`))
+        .join('');
+      typeSelect.innerHTML = ['<option value="all">ALL</option>']
+        .concat(types.map(type => `<option value="${type}">${type}</option>`))
+        .join('');
+      updateOptionsSymbolOptions();
+    }
+
+    async function loadOptionsInstruments() {
+      if (optionsInstrumentsLoaded) return;
+      optionsInstrumentsLoaded = true;
+      const note = document.getElementById('options_chart_note');
+      if (note) note.textContent = t('options_chart_loading');
+      try {
+        const res = await fetch('/api/options/instruments', { cache: 'no-store' });
+        if (!res.ok) throw new Error('instrument fetch failed');
+        const data = await res.json();
+        const list = Array.isArray(data.instruments) ? data.instruments : [];
+        optionsInstruments = list.map(item => ({
+          symbol: String(item.symbol || '').toUpperCase(),
+          expiry: normalizeExpiryLabel(item.expiry || ''),
+          optionType: normalizeOptionType(item.optionType || item.optionsType || ''),
+        })).filter(item => item.symbol);
+        rebuildOptionsFilters();
+        if (note) note.textContent = t('options_chart_hint');
+      } catch (err) {
+        optionsInstrumentsLoaded = false;
+        if (note) note.textContent = t('options_chart_load_failed');
+      }
     }
 
     function initOptionsChart() {
@@ -5174,6 +5470,10 @@
           vertLines: { color: 'rgba(91, 110, 140, 0.18)' },
           horzLines: { color: 'rgba(91, 110, 140, 0.18)' }
         },
+        leftPriceScale: {
+          visible: true,
+          borderVisible: false,
+        },
         rightPriceScale: {
           borderVisible: false,
           scaleMargins: { top: 0.18, bottom: 0.2 },
@@ -5184,6 +5484,7 @@
           timeVisible: true,
           rightOffset: 6,
           barSpacing: 12,
+          tickMarkFormatter: getChartTickMarkFormatter()
         },
         crosshair: {
           mode: LightweightCharts.CrosshairMode.Magnet,
@@ -5195,33 +5496,21 @@
           timeFormatter: getChartTimeFormatter()
         }
       });
-      optionsCandleSeries = optionsChart.addCandlestickSeries({
-        upColor: '#27d07d',
-        downColor: '#ff6b6b',
-        borderVisible: false,
-        wickUpColor: '#35f49b',
-        wickDownColor: '#ff7b7b',
-        priceLineColor: 'rgba(124, 196, 255, 0.6)',
-        priceLineWidth: 1,
+      optionsMarkSeries = optionsChart.addLineSeries({
+        color: '#7cc4ff',
+        lineWidth: 2,
+        priceLineVisible: true,
+        lastValueVisible: true,
       });
-      optionsVolumeSeries = optionsChart.addHistogramSeries({
-        color: '#3a465e',
-        priceFormat: { type: 'volume' },
-        priceScaleId: '',
-        lastValueVisible: false,
-      });
-      if (optionsVolumeSeries) {
-        optionsVolumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
-      }
       optionsChartLegendEl = document.getElementById('optionsChartLegend');
       optionsChart.subscribeCrosshairMove(param => {
         if (!param || param.time === undefined) {
           updateOptionsLegendFromLatest();
           return;
         }
-        const candle = param.seriesData.get(optionsCandleSeries);
-        if (candle && candle.time) {
-          updateOptionsLegend(candle);
+        const point = param.seriesData.get(optionsMarkSeries);
+        if (point && point.time) {
+          updateOptionsLegendFromLatest(point.time);
         }
       });
       window.addEventListener('resize', () => {
@@ -5242,20 +5531,48 @@
       applyOptionsChartSize();
     }
 
-    function updateOptionsLegend(candle) {
+    function findOptionsSeriesValue(metric, time) {
+      const data = optionsSeriesData[metric] || [];
+      if (!data.length) return null;
+      if (time) {
+        const match = data.find(point => point.time === time);
+        if (match) return match.value;
+      }
+      return data[data.length - 1].value;
+    }
+
+    function formatIv(value) {
+      if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+      return `${value.toFixed(2)}%`;
+    }
+
+    function formatDelta(value) {
+      if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+      return value.toFixed(4);
+    }
+
+    function formatVega(value) {
+      if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+      return value.toFixed(4);
+    }
+
+    function updateOptionsLegendFromLatest(atTime = null) {
       const legend = optionsChartLegendEl || document.getElementById('optionsChartLegend');
-      if (!legend || !candle) return;
+      if (!legend) return;
       if (!optionsChartLegendEl) optionsChartLegendEl = legend;
-      const timeLabel = candle.time ? new Date(candle.time * 1000).toLocaleString() : '-';
+      const markVal = findOptionsSeriesValue('mark', atTime);
+      const ivVal = optionsMetricsEnabled.iv ? findOptionsSeriesValue('iv', atTime) : null;
+      const deltaVal = optionsMetricsEnabled.delta ? findOptionsSeriesValue('delta', atTime) : null;
+      const vegaVal = optionsMetricsEnabled.vega ? findOptionsSeriesValue('vega', atTime) : null;
+      const markSeries = optionsSeriesData.mark || [];
+      const timeValue = atTime || (markSeries.length ? markSeries[markSeries.length - 1].time : null);
+      const timeLabel = timeValue ? new Date(timeValue * 1000).toLocaleString() : '-';
       legend.innerHTML = `
         <div class="legend-row">
-          <span class="legend-label">O</span><span class="legend-value">${formatPrice(candle.open)}</span>
-          <span class="legend-label">H</span><span class="legend-value">${formatPrice(candle.high)}</span>
-          <span class="legend-label">L</span><span class="legend-value">${formatPrice(candle.low)}</span>
-          <span class="legend-label">C</span><span class="legend-value">${formatPrice(candle.close)}</span>
-        </div>
-        <div class="legend-row">
-          <span class="legend-label">Vol</span><span class="legend-value">${formatVolume(candle.volume || 0)}</span>
+          <span class="legend-label">Mark</span><span class="legend-value">${formatPrice(markVal)}</span>
+          <span class="legend-label">IV</span><span class="legend-value">${formatIv(ivVal)}</span>
+          <span class="legend-label">Δ</span><span class="legend-value">${formatDelta(deltaVal)}</span>
+          <span class="legend-label">Vega</span><span class="legend-value">${formatVega(vegaVal)}</span>
         </div>
         <div class="legend-row">
           <span class="legend-label legend-time">${timeLabel}</span>
@@ -5263,10 +5580,146 @@
       `;
     }
 
-    function updateOptionsLegendFromLatest() {
-      if (!optionsChartKlines.length) return;
-      const candle = optionsChartKlines[optionsChartKlines.length - 1];
-      updateOptionsLegend(candle);
+    function setOptionsStaleBadge(isStale) {
+      const badge = document.getElementById('options_chart_stale');
+      if (!badge) return;
+      badge.classList.toggle('active', Boolean(isStale));
+    }
+
+    function updateOptionsSnapshotUI(snapshot) {
+      const asofEl = document.getElementById('options_chart_asof');
+      if (asofEl) {
+        const ts = snapshot?.asof_ms ? new Date(snapshot.asof_ms) : null;
+        asofEl.textContent = ts ? ts.toLocaleString() : '--';
+      }
+      setOptionsStaleBadge(snapshot?.stale);
+    }
+
+    function getOptionsSeries(metric) {
+      if (!optionsChart) return null;
+      if (metric === 'mark') return optionsMarkSeries;
+      if (optionsOverlaySeries.has(metric)) return optionsOverlaySeries.get(metric);
+      const colors = {
+        iv: '#f4d35e',
+        delta: '#a0b3ff',
+        vega: '#ff8f4d',
+      };
+      const priceFormat = metric === 'iv'
+        ? { type: 'custom', formatter: (value) => `${value.toFixed(2)}%` }
+        : { type: 'price', precision: 4, minMove: 0.0001 };
+      const series = optionsChart.addLineSeries({
+        color: colors[metric] || '#d7dee8',
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        priceScaleId: 'left',
+        priceFormat,
+      });
+      optionsOverlaySeries.set(metric, series);
+      return series;
+    }
+
+    function clearOptionsSeries(metric) {
+      const series = optionsOverlaySeries.get(metric);
+      if (series && optionsChart) {
+        optionsChart.removeSeries(series);
+      }
+      optionsOverlaySeries.delete(metric);
+      optionsSeriesData[metric] = [];
+    }
+
+    function setOptionsMetricEnabled(metric, enabled) {
+      optionsMetricsEnabled[metric] = enabled;
+      if (!enabled) {
+        clearOptionsSeries(metric);
+        updateOptionsLegendFromLatest();
+        return;
+      }
+      getOptionsSeries(metric);
+      refreshOptionsChart();
+    }
+
+    async function fetchOptionsSnapshot() {
+      const symbol = getOptionsChartSymbol();
+      const note = document.getElementById('options_chart_note');
+      if (note) note.textContent = '';
+      if (!symbol) {
+        if (note) note.textContent = t('options_chart_hint');
+        setOptionsStaleBadge(false);
+        return null;
+      }
+      const res = await fetch(`/api/options/snapshot?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+      if (!res.ok) {
+        const fallback = { stale: true, asof_ms: Date.now() };
+        updateOptionsSnapshotUI(fallback);
+        return fallback;
+      }
+      const data = await res.json();
+      optionsSnapshot = data;
+      updateOptionsSnapshotUI(data);
+      return data;
+    }
+
+    async function fetchOptionsTimeseries(metric) {
+      const symbol = getOptionsChartSymbol();
+      if (!symbol) return;
+      const interval = document.getElementById('options_chart_interval')?.value || '1';
+      const isIntervalChange = symbol !== optionsChartLastSymbol || interval !== optionsChartLastInterval;
+      if (isIntervalChange) {
+        optionsChartHasLoaded = false;
+      }
+      const qs = new URLSearchParams({ symbol, metric });
+      const res = await fetch(`/api/options/timeseries?${qs.toString()}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || data.ok === false || !Array.isArray(data.points)) return;
+      const bucketSeconds = getIntervalSeconds(interval);
+      const bucketMs = bucketSeconds ? bucketSeconds * 1000 : 0;
+      let pointPairs = data.points;
+      if (bucketMs) {
+        const buckets = new Map();
+        for (const [ts, value] of data.points) {
+          const tsNum = Number(ts);
+          if (!Number.isFinite(tsNum)) continue;
+          const bucket = Math.floor(tsNum / bucketMs) * bucketMs;
+          buckets.set(bucket, value);
+        }
+        pointPairs = Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]);
+      }
+      const points = pointPairs.map(([ts, value]) => {
+        const time = Math.floor(Number(ts) / 1000);
+        const val = metric === 'iv' ? Number(value) * 100 : Number(value);
+        return Number.isFinite(time) && Number.isFinite(val) ? { time, value: val } : null;
+      }).filter(Boolean);
+      optionsSeriesData[metric] = points;
+      const series = getOptionsSeries(metric);
+      if (series) series.setData(points);
+      if (metric === 'mark' && optionsChart && !optionsChartHasLoaded && points.length) {
+        optionsChart.timeScale().fitContent();
+        optionsChartHasLoaded = true;
+        optionsChartLastSymbol = symbol;
+        optionsChartLastInterval = interval;
+      }
+    }
+
+    async function refreshOptionsChart() {
+      if (optionsChartRefreshing) return;
+      optionsChartRefreshing = true;
+      try {
+        await fetchOptionsSnapshot();
+        await fetchOptionsTimeseries('mark');
+        const overlays = ['iv', 'delta', 'vega'];
+        for (const metric of overlays) {
+          if (optionsMetricsEnabled[metric]) {
+            await fetchOptionsTimeseries(metric);
+          }
+        }
+        updateOptionsLegendFromLatest();
+      } catch (err) {
+        setOptionsStaleBadge(true);
+      } finally {
+        optionsChartRefreshing = false;
+      }
     }
 
     function startOptionsChartPolling() {
@@ -5277,44 +5730,128 @@
       const auto = document.getElementById('options_chart_auto')?.checked;
       if (!auto) return;
       const refresh = parseInt(document.getElementById('options_chart_refresh')?.value || '5000', 10);
-      optionsChartTimer = setInterval(fetchOptionsKlines, isNaN(refresh) ? 5000 : refresh);
+      optionsChartTimer = setInterval(refreshOptionsChart, isNaN(refresh) ? 5000 : refresh);
     }
 
-    async function fetchOptionsKlines() {
-      if (!optionsCandleSeries) return;
+    function setOptionsOrderbookStale(isStale) {
+      const badge = document.getElementById('options_orderbook_stale');
+      if (!badge) return;
+      badge.classList.toggle('active', Boolean(isStale));
+    }
+
+    function updateOptionsOrderbookAsOf(ts) {
+      const el = document.getElementById('options_orderbook_asof');
+      if (!el) return;
+      if (!ts) {
+        el.textContent = '--';
+        return;
+      }
+      el.textContent = new Date(ts).toLocaleString();
+    }
+
+    function formatOrderbookValue(value, decimals = 4) {
+      if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+      return Number(value).toFixed(decimals);
+    }
+
+    function renderOrderbookSide(rows, side) {
+      const container = document.getElementById(side === 'ask' ? 'options_orderbook_asks' : 'options_orderbook_bids');
+      if (!container) return;
+      if (!rows.length) {
+        container.innerHTML = '';
+        return;
+      }
+      const maxCum = rows[rows.length - 1].cum || 1;
+      container.innerHTML = rows.map(row => {
+        const fill = Math.min(100, (row.cum / maxCum) * 100);
+        return `
+          <div class="orderbook-row ${side}" style="--ob-fill:${fill.toFixed(2)}%;">
+            <span class="ob-price">${formatOrderbookValue(row.price, row.priceDecimals)}</span>
+            <span class="ob-size">${formatOrderbookValue(row.size, row.sizeDecimals)}</span>
+            <span class="ob-total">${formatOrderbookValue(row.cum, row.sizeDecimals)}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function buildOrderbookRows(levels, side) {
+      const rows = [];
+      let cumulative = 0;
+      levels.forEach(level => {
+        cumulative += level.size;
+        rows.push({ ...level, cum: cumulative });
+      });
+      return rows;
+    }
+
+    function renderOptionsOrderbook(data) {
+      const asks = Array.isArray(data.asks) ? data.asks : [];
+      const bids = Array.isArray(data.bids) ? data.bids : [];
+      const parsedAsks = asks.map(([price, size]) => ({ price: Number(price), size: Number(size) }))
+        .filter(item => Number.isFinite(item.price) && Number.isFinite(item.size));
+      const parsedBids = bids.map(([price, size]) => ({ price: Number(price), size: Number(size) }))
+        .filter(item => Number.isFinite(item.price) && Number.isFinite(item.size));
+      parsedAsks.sort((a, b) => a.price - b.price);
+      parsedBids.sort((a, b) => b.price - a.price);
+      const askRowsRaw = buildOrderbookRows(parsedAsks.slice(0, 25), 'ask');
+      const bidRows = buildOrderbookRows(parsedBids.slice(0, 25), 'bid');
+      const askRows = askRowsRaw.slice().reverse();
+      const bestAsk = parsedAsks.length ? parsedAsks[0].price : null;
+      const bestBid = parsedBids.length ? parsedBids[0].price : null;
+      const mid = bestAsk && bestBid ? (bestAsk + bestBid) / 2 : (bestAsk || bestBid);
+      const midEl = document.getElementById('options_orderbook_mid');
+      if (midEl) {
+        midEl.textContent = mid ? formatOrderbookValue(mid, 4) : '--';
+      }
+      const priceDecimals = 4;
+      const sizeDecimals = 4;
+      const withMeta = (rows) => rows.map(row => ({
+        ...row,
+        priceDecimals,
+        sizeDecimals,
+      }));
+      renderOrderbookSide(withMeta(askRows), 'ask');
+      renderOrderbookSide(withMeta(bidRows), 'bid');
+      updateOptionsOrderbookAsOf(data.asof_ms || Date.now());
+      setOptionsOrderbookStale(Boolean(data.stale));
+    }
+
+    function scheduleOptionsOrderbook(delayMs) {
+      if (optionsOrderbookTimer) {
+        clearTimeout(optionsOrderbookTimer);
+        optionsOrderbookTimer = null;
+      }
+      optionsOrderbookTimer = setTimeout(fetchOptionsOrderbook, delayMs);
+    }
+
+    async function fetchOptionsOrderbook() {
       const symbol = getOptionsChartSymbol();
-      const note = document.getElementById('options_chart_note');
-      if (note) note.textContent = '';
       if (!symbol) {
-        if (note) note.textContent = t('options_chart_hint');
+        renderOptionsOrderbook({ bids: [], asks: [], stale: false, asof_ms: null });
         return;
       }
-      const interval = document.getElementById('options_chart_interval')?.value || '1';
-      const isIntervalChange = symbol !== optionsChartLastSymbol || interval !== optionsChartLastInterval;
-      if (isIntervalChange) {
-        optionsChartHasLoaded = false;
+      const fastDelay = 1500;
+      const staleDelay = 15000;
+      try {
+        const res = await fetch(`/api/options/orderbook?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+        const data = res.ok ? await res.json() : { stale: true, bids: [], asks: [] };
+        renderOptionsOrderbook(data);
+        scheduleOptionsOrderbook(data.stale ? staleDelay : fastDelay);
+      } catch (err) {
+        renderOptionsOrderbook({ bids: [], asks: [], stale: true, asof_ms: Date.now() });
+        scheduleOptionsOrderbook(staleDelay);
       }
-      const qs = new URLSearchParams({ symbol, interval, limit: '300' });
-      const res = await fetch(`/api/options/klines?${qs.toString()}`, { cache: 'no-store' });
-      if (!res.ok) {
-        if (note) note.textContent = currentLang === 'zh' ? '获取期权 K 线失败。' : 'Failed to fetch options klines.';
-        return;
+    }
+
+    function startOptionsOrderbook() {
+      scheduleOptionsOrderbook(100);
+    }
+
+    function stopOptionsOrderbook() {
+      if (optionsOrderbookTimer) {
+        clearTimeout(optionsOrderbookTimer);
+        optionsOrderbookTimer = null;
       }
-      const data = await res.json();
-      if (data.error || !Array.isArray(data.klines)) {
-        if (note) note.textContent = data.error || (currentLang === 'zh' ? '暂无期权 K 线数据。' : 'No options kline data available.');
-        return;
-      }
-      optionsChartKlines = data.klines;
-      optionsCandleSeries.setData(data.klines);
-      if (optionsVolumeSeries) optionsVolumeSeries.setData(buildVolumeBars(data.klines));
-      if (optionsChart && !optionsChartHasLoaded) {
-        optionsChart.timeScale().fitContent();
-      }
-      optionsChartHasLoaded = true;
-      optionsChartLastSymbol = symbol;
-      optionsChartLastInterval = interval;
-      updateOptionsLegendFromLatest();
     }
 
     function ensureOptionsChartReady() {
@@ -5340,8 +5877,12 @@
       }
       optionsChartInitAttempts = 0;
       resizeOptionsChart();
-      fetchOptionsKlines();
-      startOptionsChartPolling();
+      loadOptionsInstruments().then(() => {
+        updateOptionsSymbolOptions();
+        refreshOptionsChart();
+        startOptionsChartPolling();
+        startOptionsOrderbook();
+      });
     }
 
     function isStreamInterval(interval) {
@@ -6456,14 +6997,30 @@
     on('chart_reload', 'click', () => {
       fetchKlines();
     });
-    on('options_chart_reload', 'click', fetchOptionsKlines);
-    on('options_chart_interval', 'change', fetchOptionsKlines);
+    on('options_chart_reload', 'click', refreshOptionsChart);
+    on('options_chart_interval', 'change', refreshOptionsChart);
     on('options_chart_refresh', 'change', startOptionsChartPolling);
     on('options_chart_auto', 'change', startOptionsChartPolling);
-    on('options_chart_symbol', 'change', fetchOptionsKlines);
-    on('options_chart_symbol', 'keydown', (e) => {
-      if (e.key === 'Enter') fetchOptionsKlines();
+    on('options_chart_symbol', 'change', () => {
+      optionsChartHasLoaded = false;
+      refreshOptionsChart();
+      startOptionsOrderbook();
     });
+    on('options_chart_expiry', 'change', () => {
+      updateOptionsSymbolOptions();
+      optionsChartHasLoaded = false;
+      refreshOptionsChart();
+      startOptionsOrderbook();
+    });
+    on('options_chart_type', 'change', () => {
+      updateOptionsSymbolOptions();
+      optionsChartHasLoaded = false;
+      refreshOptionsChart();
+      startOptionsOrderbook();
+    });
+    on('options_show_iv', 'change', (e) => setOptionsMetricEnabled('iv', e.target.checked));
+    on('options_show_delta', 'change', (e) => setOptionsMetricEnabled('delta', e.target.checked));
+    on('options_show_vega', 'change', (e) => setOptionsMetricEnabled('vega', e.target.checked));
     document.querySelectorAll('.tf-btn').forEach(btn => {
       btn.addEventListener('click', () => setActiveInterval(btn.dataset.interval));
     });

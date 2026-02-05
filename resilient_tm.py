@@ -692,11 +692,32 @@ class TradeOptimizerHandler(SimpleHTTPRequestHandler):
                     bar["c"] = price
                     bar["v"] += size
                 else:
+                    if bars:
+                        last = bars[-1]
+                        next_bucket = last["t"] + OPTIONS_TRADE_BAR_INTERVAL_MS
+                        if bucket > next_bucket:
+                            last_close = last["c"]
+                            fill_t = next_bucket
+                            while fill_t < bucket:
+                                bars.append({
+                                    "t": fill_t,
+                                    "o": last_close,
+                                    "h": last_close,
+                                    "l": last_close,
+                                    "c": last_close,
+                                    "v": 0.0,
+                                })
+                                fill_t += OPTIONS_TRADE_BAR_INTERVAL_MS
+                            open_price = last_close
+                        else:
+                            open_price = price
+                    else:
+                        open_price = price
                     bars.append({
                         "t": bucket,
-                        "o": price,
-                        "h": price,
-                        "l": price,
+                        "o": open_price,
+                        "h": max(open_price, price),
+                        "l": min(open_price, price),
                         "c": price,
                         "v": size,
                     })

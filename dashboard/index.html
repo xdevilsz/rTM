@@ -2071,15 +2071,10 @@
           </label>
           <label class="field-group"><span data-i18n="label_interval">Interval</span>
             <select id="options_chart_interval" class="field sm">
-              <option value="1">1m</option>
-              <option value="3">3m</option>
-              <option value="5">5m</option>
               <option value="15" selected>15m</option>
               <option value="30">30m</option>
+              <option value="45">45m</option>
               <option value="60">1h</option>
-              <option value="120">2h</option>
-              <option value="240">4h</option>
-              <option value="D">1D</option>
             </select>
           </label>
           <label class="switch">
@@ -2234,6 +2229,22 @@
     </div>
     <div id="orders_content">
       <div class="muted" data-i18n="orders_hint">Fetch active orders (API credentials required).</div>
+    </div>
+
+    <h2 data-i18n="heading_options_positions">Options Positions</h2>
+    <div class="controls">
+      <button id="refresh_options_positions_tab" data-i18n="button_fetch_options_positions">Fetch Positions</button>
+    </div>
+    <div id="options_positions_tab_content">
+      <div class="muted" data-i18n="options_positions_hint">Click "Fetch Positions" to load options positions.</div>
+    </div>
+
+    <h2 data-i18n="heading_active_options_orders">Active Options Orders</h2>
+    <div class="controls">
+      <button id="refresh_options_orders_tab" data-i18n="button_fetch_orders">Fetch Active Orders</button>
+    </div>
+    <div id="options_orders_tab_content">
+      <div class="muted" data-i18n="options_orders_hint">Fetch options orders (API credentials required).</div>
     </div>
   </div>
 
@@ -2540,6 +2551,7 @@
         heading_trade_consistency: 'Trade Consistency',
         heading_options_chart: 'Options Chart',
         heading_options_orderbook: 'Options Orderbook',
+        heading_active_options_orders: 'Active Options Orders',
         heading_options_positions: 'Options Positions',
         heading_account_summary: 'Account Summary',
         trade_panel_options_title: 'Options Trading',
@@ -2556,6 +2568,7 @@
         heading_trade_history: 'Trade History (Logged)',
         options_positions_hint: 'Click "Fetch Positions" to load options positions.',
         options_positions_empty: 'No options positions.',
+        options_orders_hint: 'Fetch options orders (API credentials required).',
         options_order_idle: 'Ready.',
         options_order_submitting: 'Submitting order...',
         options_order_done: 'Order submitted.',
@@ -2873,6 +2886,7 @@
         heading_trade_consistency: '交易一致性',
         heading_options_chart: '期权图表',
         heading_options_orderbook: '期权盘口',
+        heading_active_options_orders: '期权活跃订单',
         heading_options_positions: '期权持仓',
         heading_account_summary: '账户概览',
         trade_panel_options_title: '期权交易',
@@ -2889,6 +2903,7 @@
         heading_trade_history: '交易历史（已记录）',
         options_positions_hint: '点击“刷新持仓”加载期权持仓。',
         options_positions_empty: '暂无期权持仓。',
+        options_orders_hint: '获取期权订单（需要 API 凭据）。',
         options_order_idle: '就绪。',
         options_order_submitting: '正在提交订单...',
         options_order_done: '订单已提交。',
@@ -4865,8 +4880,9 @@
       }
     }
 
-    function renderPositions(data) {
-      const content = document.getElementById('positions_content');
+    function renderPositionsInto(data, containerId) {
+      const content = document.getElementById(containerId);
+      if (!content) return;
       let positions = data.positions || [];
       
       // Ensure positions is an array
@@ -4914,6 +4930,10 @@
       content.querySelectorAll('.position-manage').forEach(btn => {
         btn.addEventListener('click', () => openPositionModal(btn.dataset.symbol));
       });
+    }
+
+    function renderPositions(data) {
+      renderPositionsInto(data, 'positions_content');
     }
 
     function renderResilientMaker(metrics) {
@@ -5280,8 +5300,40 @@
       }
     }
 
-    function renderOrders(orders) {
-      const content = document.getElementById('orders_content');
+    async function fetchOptionsPositionsTab() {
+      const content = document.getElementById('options_positions_tab_content');
+      if (!content) return;
+      try {
+        const res = await fetch('/api/options/positions', { cache: 'no-store' });
+        if (!res.ok) {
+          content.innerHTML = `<div class="muted">${currentLang === 'zh' ? '当前模式不支持持仓。' : 'Positions not available in current mode.'}</div>`;
+          return;
+        }
+        const data = await res.json();
+        renderPositionsInto({ positions: data.positions || [] }, 'options_positions_tab_content');
+      } catch (e) {
+        content.innerHTML = `<div class="muted">${t('status_positions_error')} ${e.message}</div>`;
+      }
+    }
+
+    async function fetchOptionsOrdersTab() {
+      const content = document.getElementById('options_orders_tab_content');
+      if (!content) return;
+      try {
+        const res = await fetch('/api/options/orders', { cache: 'no-store' });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || (currentLang === 'zh' ? '获取订单失败。' : 'Failed to fetch orders.'));
+        }
+        renderOrdersInto(data.orders || [], 'options_orders_tab_content');
+      } catch (e) {
+        content.innerHTML = `<div class="muted">${t('status_orders_error')} ${e.message}</div>`;
+      }
+    }
+
+    function renderOrdersInto(orders, containerId) {
+      const content = document.getElementById(containerId);
+      if (!content) return;
       if (!Array.isArray(orders) || orders.length === 0) {
         content.innerHTML = `<div class="muted">${t('status_no_orders')}</div>`;
         return;
@@ -5305,6 +5357,10 @@
       content.querySelectorAll('.cancel-order').forEach(btn => {
         btn.addEventListener('click', () => cancelOrder(btn.dataset.orderId, btn.dataset.symbol));
       });
+    }
+
+    function renderOrders(orders) {
+      renderOrdersInto(orders, 'orders_content');
     }
 
     async function cancelOrder(orderId, symbol) {
@@ -6225,18 +6281,74 @@
       const data = await res.json();
       if (!data || data.ok === false) return;
       if (metric === 'mark' && Array.isArray(data.bars)) {
-        const candles = data.bars.map(row => {
+        const bucketSeconds = getIntervalSeconds(interval);
+        const bucketMs = bucketSeconds ? bucketSeconds * 1000 : 0;
+        const srcBars = data.bars.map(row => {
           const ts = Number(row[0]);
           const open = Number(row[1]);
           const high = Number(row[2]);
           const low = Number(row[3]);
           const close = Number(row[4]);
-          const time = Math.floor(ts / 1000);
-          if (!Number.isFinite(time) || !Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+          const volume = Number(row[5] || 0);
+          if (!Number.isFinite(ts) || !Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
             return null;
           }
-          return { time, open, high, low, close };
-        }).filter(Boolean);
+          return { t: ts, o: open, h: high, l: low, c: close, v: volume };
+        }).filter(Boolean).sort((a, b) => a.t - b.t);
+
+        if (!bucketMs || !srcBars.length) {
+          const candles = srcBars.map(bar => ({
+            time: Math.floor(bar.t / 1000),
+            open: bar.o,
+            high: bar.h,
+            low: bar.l,
+            close: bar.c,
+            volume: bar.v
+          }));
+          optionsCandlesData = candles;
+          optionsSeriesData.mark = candles.map(candle => ({ time: candle.time, value: candle.close }));
+          const series = getOptionsSeries(metric);
+          if (series) series.setData(candles);
+          if (optionsChart && !optionsChartHasLoaded && candles.length) {
+            optionsChart.timeScale().fitContent();
+            optionsChartHasLoaded = true;
+            optionsChartLastSymbol = symbol;
+            optionsChartLastInterval = interval;
+          }
+          return;
+        }
+
+        const startBucket = Math.floor(srcBars[0].t / bucketMs) * bucketMs;
+        const nowBucket = Math.floor(Date.now() / bucketMs) * bucketMs;
+        const endBucket = Math.max(nowBucket, Math.floor(srcBars[srcBars.length - 1].t / bucketMs) * bucketMs);
+        const candles = [];
+        let lastClose = null;
+        let idx = 0;
+        for (let bucket = startBucket; bucket <= endBucket; bucket += bucketMs) {
+          const bucketBars = [];
+          while (idx < srcBars.length && srcBars[idx].t < bucket + bucketMs) {
+            if (srcBars[idx].t >= bucket) bucketBars.push(srcBars[idx]);
+            idx += 1;
+          }
+          if (bucketBars.length) {
+            const open = lastClose !== null ? lastClose : bucketBars[0].o;
+            const high = Math.max(open, ...bucketBars.map(b => b.h));
+            const low = Math.min(open, ...bucketBars.map(b => b.l));
+            const close = bucketBars[bucketBars.length - 1].c;
+            const volume = bucketBars.reduce((sum, b) => sum + (b.v || 0), 0);
+            candles.push({ time: Math.floor(bucket / 1000), open, high, low, close, volume });
+            lastClose = close;
+          } else if (lastClose !== null) {
+            candles.push({
+              time: Math.floor(bucket / 1000),
+              open: lastClose,
+              high: lastClose,
+              low: lastClose,
+              close: lastClose,
+              volume: 0
+            });
+          }
+        }
         optionsCandlesData = candles;
         optionsSeriesData.mark = candles.map(candle => ({ time: candle.time, value: candle.close }));
         const series = getOptionsSeries(metric);
@@ -7616,6 +7728,8 @@
     on('options_sell', 'click', () => submitOptionsOrder('Sell'));
     on('options_refresh_positions', 'click', fetchOptionsPositions);
     on('options_refresh_account', 'click', fetchOptionsAccountSummary);
+    on('refresh_options_positions_tab', 'click', fetchOptionsPositionsTab);
+    on('refresh_options_orders_tab', 'click', fetchOptionsOrdersTab);
     on('options_show_iv', 'change', (e) => setOptionsMetricEnabled('iv', e.target.checked));
     on('options_show_delta', 'change', (e) => setOptionsMetricEnabled('delta', e.target.checked));
     on('options_show_vega', 'change', (e) => setOptionsMetricEnabled('vega', e.target.checked));
